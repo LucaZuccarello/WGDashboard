@@ -27,6 +27,7 @@ from json import JSONEncoder
 from flask_cors import CORS
 
 from icmplib import ping, traceroute
+import apprise
 
 # Import other python files
 import threading
@@ -121,6 +122,9 @@ class DashboardLogger:
         self.loggerdb.row_factory = sqlite3.Row
         self.__createLogDatabase()
         self.log(Message="WGDashboard started")
+        DashboardNotification.notify(message="WGDashboard started")
+        # notify(message="WGDashboard started")
+
     def __createLogDatabase(self):
         with self.loggerdb:
             loggerdbCursor = self.loggerdb.cursor()
@@ -143,6 +147,8 @@ class DashboardLogger:
                 return True
         except Exception as e:
             print(f"[WGDashboard] Access Log Error: {str(e)}")
+            DashboardNotification.notify(message=f"[WGDashboard] Access Log Error: {str(e)}")
+            # notify(message=f"[WGDashboard] Access Log Error: {str(e)}")
             return False
     
 class PeerJobLogger:
@@ -172,8 +178,12 @@ class PeerJobLogger:
                                             (str(uuid.uuid4()), JobID, Status, Message,))
                 if self.loggerdb.in_transaction:
                     self.loggerdb.commit()
+                DashboardNotification.notify(message=Message)
+                # notify(message=Message)
         except Exception as e:
             print(f"[WGDashboard] Peer Job Log Error: {str(e)}")
+            DashboardNotification.notify(f"[WGDashboard] Peer Job Log Error: {str(e)}")
+            # notify(message=f"[WGDashboard] Peer Job Log Error: {str(e)}")
             return False
         return True
     
@@ -894,12 +904,16 @@ class WireguardConfiguration:
             try:
                 check = subprocess.check_output(f"wg-quick down {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
+                DashboardNotification.notify(message=f"Tunnel {self.Name} turned off")
+                # notify(message="Tunnel turned off")
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
                 check = subprocess.check_output(f"wg-quick up {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
+                DashboardNotification.notify(message=f"Tunnel {self.Name} turned on")
+                # notify(message="Tunnel turned on")
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         self.getStatus()
@@ -1540,8 +1554,12 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
+        DashboardNotification.notify(message=f"Login success: {data['username']}")
+        # notify(message=f"Login success: {data['username']}")
         return resp
     DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
+    DashboardNotification.notify(message=f"Login failed: {data['username']}")
+    # notify(message=f"Login failed: {data['username']}")
     if totpEnabled:
         return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
     else:
@@ -1552,6 +1570,8 @@ def API_AuthenticateLogin():
 def API_SignOut():
     resp = ResponseObject(True, "")
     resp.delete_cookie("authToken")
+    DashboardNotification.notify(message="Sing Out")
+    # notify(message="Sing Out")
     return resp
 
 
@@ -2190,6 +2210,41 @@ def gunicornConfig():
     _, app_port = DashboardConfig.GetConfig("Server", "app_port")
     return app_ip, app_port
 
+
+'''
+Apprise Notification API
+'''
+
+class DashboardNotification:
+    def __init__(self):
+        self.notification= apprise.Apprise()
+
+    def notify(self, message: str = ""):
+        try:
+            appriseNotifyFunction = self.notification.notify
+            notificationThread = threading.Thread(target=appriseNotifyFunction, daemon=True, args=(message,))
+            notificationThread.start()
+        except Exception as e:
+            print(f"[WGDashboard] Error to send the notification: {str(e)}")
+
+    def add(self, destinationUrl: str):
+        try:
+            self.notification.add(destinationUrl)
+        except Exception as e:
+            print(f"[WGDashboard] Error to add new destination: {str(e)}")
+
+
+# def notify(message):
+#     try:
+#         notification= apprise.Apprise()
+#         notification.add('https://discord.com/api/webhooks/1296392928528175125/04VbF6Oxg04ucivWVVdDtwWylEiizRHHwyWN8bP6R-UIl0rxAuihFHoK4bxj7evijjY8')
+#         notification.notify(body=message)
+#     except Exception as e:
+#         print(f"[WGDashboard] Error to send the notification: {str(e)}")
+
+
+DashboardNotification: DashboardNotification = DashboardNotification()
+DashboardNotification.add('https://discord.com/api/webhooks/1296392928528175125/04VbF6Oxg04ucivWVVdDtwWylEiizRHHwyWN8bP6R-UIl0rxAuihFHoK4bxj7evijjY8')
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()
