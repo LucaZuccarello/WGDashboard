@@ -27,10 +27,11 @@ from json import JSONEncoder
 from flask_cors import CORS
 
 from icmplib import ping, traceroute
-import apprise
+from apprise import Apprise
 
 # Import other python files
 import threading
+from multiprocessing import Process, SimpleQueue
 
 from flask.json.provider import DefaultJSONProvider
 
@@ -2212,39 +2213,44 @@ def gunicornConfig():
 
 
 '''
-Apprise Notification API
+Notification API
 '''
 
 class DashboardNotification:
     def __init__(self):
-        self.notification= apprise.Apprise()
+        self.sendingQueue: SimpleQueue = SimpleQueue()
+        self.notification: Apprise = Apprise()
+
+        self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue,), name='Background', daemon=True)
+        self.background_process.start()
+
+    def backgroundProcess(self, queue: SimpleQueue):
+        notificationObject: Apprise = Apprise()
+        try:
+            while True:
+                item = queue.get()
+                if isinstance(item, Apprise):
+                    notificationObject = item
+                elif isinstance(item, str):
+                    notificationObject.notify(body=item)
+        except Exception as e:
+            notificationObject.notify(body=str(e))
 
     def notify(self, message: str = ""):
         try:
-            appriseNotifyFunction = self.notification.notify
-            notificationThread = threading.Thread(target=appriseNotifyFunction, daemon=True, args=(message,))
-            notificationThread.start()
+            self.sendingQueue.put(message)
         except Exception as e:
-            print(f"[WGDashboard] Error to send the notification: {str(e)}")
+            print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
     def add(self, destinationUrl: str):
         try:
             self.notification.add(destinationUrl)
+            self.sendingQueue.put(self.notification)
         except Exception as e:
             print(f"[WGDashboard] Error to add new destination: {str(e)}")
 
-
-# def notify(message):
-#     try:
-#         notification= apprise.Apprise()
-#         notification.add('https://discord.com/api/webhooks/1296392928528175125/04VbF6Oxg04ucivWVVdDtwWylEiizRHHwyWN8bP6R-UIl0rxAuihFHoK4bxj7evijjY8')
-#         notification.notify(body=message)
-#     except Exception as e:
-#         print(f"[WGDashboard] Error to send the notification: {str(e)}")
-
-
 DashboardNotification: DashboardNotification = DashboardNotification()
-DashboardNotification.add('https://discord.com/api/webhooks/1296392928528175125/04VbF6Oxg04ucivWVVdDtwWylEiizRHHwyWN8bP6R-UIl0rxAuihFHoK4bxj7evijjY8')
+DashboardNotification.add('https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs')
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()
