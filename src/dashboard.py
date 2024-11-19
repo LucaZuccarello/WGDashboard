@@ -2221,6 +2221,7 @@ class DashboardNotification:
         self.sendingQueue: SimpleQueue = SimpleQueue()
         self.notification: Apprise = Apprise()
 
+        self.configure()
         self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue,), name='Background', daemon=True)
         self.background_process.start()
 
@@ -2236,21 +2237,45 @@ class DashboardNotification:
         except Exception as e:
             notificationObject.notify(body=str(e))
 
+    def configure(self):
+        try:
+            existingTables = sqlSelect("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            existingTables = [t['name'] for t in existingTables]
+            if 'DestinationUrl' not in existingTables:
+                sqlUpdate(
+                    """
+                    CREATE TABLE DestinationUrl(
+                        id INTEGER PRIMARY KEY AUTOINCREMENT, name VARCHAR NOT NULL, url VARCHAR UNIQUE, tag VARCHAR NULL
+                    )
+                    """
+                )
+            else :
+                destinations = sqlSelect("SELECT url, tag FROM DestinationUrl").fetchall()
+                if destinations :
+                    for t in destinations:
+                        self.notification.add(servers=t['url'],tag=t['tag'])
+                    self.sendingQueue.put(self.notification)
+        except Exception as e:
+            print(f"[WGDashboard] Error configuring notification system: {str(e)}")
+
     def notify(self, message: str = ""):
         try:
             self.sendingQueue.put(message)
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
-    def add(self, destinationUrl: str):
+    def add(self, name: str = "" , destinationUrl: str = "", tag: str = ""):
         try:
-            self.notification.add(destinationUrl)
-            self.sendingQueue.put(self.notification)
+            url = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (destinationUrl,)).fetchall()
+            if url is not None:
+                sqlUpdate("INSERT INTO DestinationUrl (name, url, tag) VALUES (?, ?, ?)",(name, destinationUrl, tag,))
+                self.notification.add(servers=destinationUrl, tag=tag)
+                self.sendingQueue.put(self.notification)
         except Exception as e:
             print(f"[WGDashboard] Error to add new destination: {str(e)}")
 
 DashboardNotification: DashboardNotification = DashboardNotification()
-DashboardNotification.add('https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs')
+DashboardNotification.add(name='Discord', destinationUrl='https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs')
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()
