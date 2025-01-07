@@ -12,6 +12,7 @@ import DashboardSettingsInputIPAddressAndPort
 	from "@/components/settingsComponent/dashboardSettingsInputIPAddressAndPort.vue";
 import DashboardAPIKeys from "@/components/settingsComponent/dashboardAPIKeys.vue";
 import AccountSettingsMFA from "@/components/settingsComponent/accountSettingsMFA.vue";
+import DashboardNotificationSetup from "@/components/settingsComponent/dashboardNotificationSetup.vue";
 
 export default {
 	name: "settings",
@@ -22,7 +23,7 @@ export default {
 		DashboardSettingsInputIPAddressAndPort,
 		DashboardTheme,
 		DashboardSettingsInputWireguardConfigurationPath,
-		AccountSettingsInputPassword, AccountSettingsInputUsername, PeersDefaultSettingsInput},
+		AccountSettingsInputPassword, AccountSettingsInputUsername, PeersDefaultSettingsInput, DashboardNotificationSetup},
 	setup(){
 		const dashboardConfigurationStore = DashboardConfigurationStore()
 		return {dashboardConfigurationStore}
@@ -82,6 +83,7 @@ export default {
 				</div>
 			</div>
 			<DashboardAPIKeys></DashboardAPIKeys>
+			<DashboardNotificationSetup></DashboardNotificationSetup>
 		</div>
 	</div>
 </template>

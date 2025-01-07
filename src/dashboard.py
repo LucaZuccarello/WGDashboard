@@ -123,7 +123,7 @@ class DashboardLogger:
         self.loggerdb.row_factory = sqlite3.Row
         self.__createLogDatabase()
         self.log(Message="WGDashboard started")
-        DashboardNotification.notify(message="WGDashboard started")
+        DashboardNotification.notify(message="WGDashboard started", tag="debug")
         # notify(message="WGDashboard started")
 
     def __createLogDatabase(self):
@@ -179,7 +179,7 @@ class PeerJobLogger:
                                             (str(uuid.uuid4()), JobID, Status, Message,))
                 if self.loggerdb.in_transaction:
                     self.loggerdb.commit()
-                DashboardNotification.notify(message=Message)
+                DashboardNotification.notify(message=Message, tag="debug")
                 # notify(message=Message)
         except Exception as e:
             print(f"[WGDashboard] Peer Job Log Error: {str(e)}")
@@ -1555,7 +1555,7 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
-        DashboardNotification.notify(message=f"Login success: {data['username']}")
+        DashboardNotification.notify(message=f"Login success: {data['username']}", tag="info")
         # notify(message=f"Login success: {data['username']}")
         return resp
     DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
@@ -1571,7 +1571,7 @@ def API_AuthenticateLogin():
 def API_SignOut():
     resp = ResponseObject(True, "")
     resp.delete_cookie("authToken")
-    DashboardNotification.notify(message="Sing Out")
+    DashboardNotification.notify(message="Sing Out", tag="info")
     # notify(message="Sing Out")
     return resp
 
@@ -2220,6 +2220,7 @@ class DashboardNotification:
     def __init__(self):
         self.sendingQueue: SimpleQueue = SimpleQueue()
         self.notification: Apprise = Apprise()
+        self.urls: list[dict[str, str]] = []
 
         self.configure()
         self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue,), name='Background', daemon=True)
@@ -2231,9 +2232,12 @@ class DashboardNotification:
             while True:
                 item = queue.get()
                 if isinstance(item, Apprise):
-                    notificationObject = item
-                elif isinstance(item, str):
-                    notificationObject.notify(body=item)
+                    notificationObject = item #protobuff socket
+                elif isinstance(item, dict):
+                    if item['tag']:
+                        notificationObject.notify(body=item['message'], tag=item['tag'])
+                    else:
+                        notificationObject.notify(body=item['message'])
         except Exception as e:
             notificationObject.notify(body=str(e))
 
@@ -2250,32 +2254,36 @@ class DashboardNotification:
                     """
                 )
             else :
-                destinations = sqlSelect("SELECT url, tag FROM DestinationUrl").fetchall()
+                destinations = sqlSelect("SELECT name, url, tag FROM DestinationUrl").fetchall()
                 if destinations :
                     for t in destinations:
                         self.notification.add(servers=t['url'],tag=t['tag'])
+                        self.urls.append({"name": t['name'], "url": t['url'], "tag": t['tag']})
                     self.sendingQueue.put(self.notification)
         except Exception as e:
             print(f"[WGDashboard] Error configuring notification system: {str(e)}")
 
-    def notify(self, message: str = ""):
+    def notify(self, message: str = "", tag: str = ""):
         try:
-            self.sendingQueue.put(message)
+            self.sendingQueue.put({"message": message, "tag": tag})
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
-    def add(self, name: str = "" , destinationUrl: str = "", tag: str = ""):
+    def add(self, name: str, destinationUrl: str, tag: str =""):
         try:
             url = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (destinationUrl,)).fetchall()
             if url is not None:
                 sqlUpdate("INSERT INTO DestinationUrl (name, url, tag) VALUES (?, ?, ?)",(name, destinationUrl, tag,))
                 self.notification.add(servers=destinationUrl, tag=tag)
                 self.sendingQueue.put(self.notification)
+                self.urls.append({"name": name, "url": destinationUrl, "tag": tag})
         except Exception as e:
             print(f"[WGDashboard] Error to add new destination: {str(e)}")
 
 DashboardNotification: DashboardNotification = DashboardNotification()
-DashboardNotification.add(name='Discord', destinationUrl='https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs')
+DashboardNotification.add(name='Discord', destinationUrl='https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs', tag='info')
+DashboardNotification.add(name='Telegram',destinationUrl='tgram://7867719981:AAHcBpAcDbPI_rFsesRDpvhITkio6a_e_70/962704896', tag='debug')
+
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()
