@@ -1,63 +1,68 @@
 <script>
 import {ref} from "vue";
-import dayjs from "dayjs";
 import {fetchPost} from "@/utilities/fetch.js";
 import {NotificationConfigurationsStore} from "@/stores/notificationConfigurationStore"
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import VueDatePicker from "@vuepic/vue-datepicker";
 import NotificationDrodown from "./notificationDrodown.vue";
 
 export default {
 	name: "newDestinationComponent",
-	components: {VueDatePicker, NotificationDrodown},
+	components: {NotificationDrodown},
+	props: {
+		oldDestination: Object
+	},
 	data(){
 		return{
-			newKeyData:{
-				ExpiredAt: dayjs().add(7, 'd').format("YYYY-MM-DD HH:mm:ss"),
-				neverExpire: false
-			},
 			submitting: false,
-			edit: false,
-			warningText: "L'URL deve essere della forma 'discord://webhook_id/webhook_token' oppure 'discord://avatar@webhook_id/webhook_token'"
 		}
 	},
-	setup(){
-		const tags = ['info','error','debug']
-        const notificationService = ['Discord','Telegram','Slack']
-		const serviceSelected = ref(notificationService[0])
-		const tagSelected = ref(tags[0])
-		const store = DashboardConfigurationStore();
-		return {store, serviceSelected, tagSelected, tags, notificationService};
-	},
-	mounted() {
-		console.log(this.newKeyData.ExpiredAt)
+	setup(props){
+		const store = DashboardConfigurationStore()
+		const notifStore = NotificationConfigurationsStore()
+		const newDestinationData = (props.oldDestination) ? ref(JSON.parse(JSON.stringify(props.oldDestination))) : ref({service: notifStore.Services[0], tag: notifStore.Tags[0]})
+		const sendingData = {}
+		
+		return {store, newDestinationData, notifStore, sendingData};
 	},
 	
 	methods: {
-		submitNewAPIKey(){
+		submitNewDestination(){
 			this.submitting = true;
-			fetchPost('/api/newDashboardAPIKey', this.newKeyData, (res) => {
-				if (res.status){
-					this.$emit('created', res.data);
-					this.store.newMessage("Server", "New API Key created", "success");
-					this.$emit('close')
-				}else{
-					this.store.newMessage("Server", res.message, "danger")
-				}
-				this.submitting = false;
-			})
-		},
-		fixDate(date){
-			console.log(dayjs(date).format("YYYY-MM-DDTHH:mm:ss"))
-			return dayjs(date).format("YYYY-MM-DDTHH:mm:ss")
-		},
-		parseTime(modelData){
-			if(modelData){
-				this.newKeyData.ExpiredAt = dayjs(modelData).format("YYYY-MM-DD HH:mm:ss");
-			}else{
-				this.newKeyData.ExpiredAt = undefined
+			this.sendingData = {
+				name: this.newDestinationData.service.name,
+				Id: this.newDestinationData.service.dataRequired[0].value,
+				Token: this.newDestinationData.service.dataRequired[1].value,
+				tag: this.newDestinationData.tag.name
 			}
-		}
+			if(this.oldDestination){
+				this.sendingData.oldName = this.oldDestination.service.name
+				this.sendingData.oldId = this.oldDestination.service.dataRequired[0].value
+				this.sendingData.oldToken = this.oldDestination.service.dataRequired[1].value
+				this.sendingData.oldTag = this.oldDestination.tag.name
+				fetchPost('/api/updateNotificationConfig', this.sendingData, (res) => {
+					if (res.status){
+						this.$emit('created', res.data);
+						this.store.newMessage("Server", "New Destination created", "success");
+						this.$emit('close')
+					}else{
+						this.store.newMessage("Server", res.message, "danger")
+					}
+					this.submitting = false;
+				})
+			}
+			else{
+				fetchPost('/api/addNotificationConfig', this.sendingData, (res) => {
+					if (res.status){
+						this.$emit('created', res.data);
+						this.store.newMessage("Server", "New Destination created", "success");
+						this.$emit('close')
+					}else{
+						this.store.newMessage("Server", res.message, "danger")
+					}
+					this.submitting = false;
+				})
+			}
+		},
 	},
 }
 </script>
@@ -67,40 +72,46 @@ export default {
 	     style="background-color: #00000060; backdrop-filter: blur(3px)">
 		<div class="card m-auto rounded-3 mt-5">
 			<div class="card-header bg-transparent d-flex align-items-center gap-2 border-0 p-4 pb-0">
-				<h6 class="mb-0">Add New Destination</h6>
+				<h6 class="mb-0">{{(!this.oldDestination)? "Add your new Destination..." : "Change your Destination..."}}</h6>
 				<button type="button" class="btn-close ms-auto" @click="this.$emit('close')"></button>
 			</div>
 			<div class="card-body d-flex gap-2 p-4 flex-column">
 				<div class="d-flex gap-2 align-items-center mb-2">
-					<samp>
-						Service: 
-					</samp>
-					<NotificationDrodown
-						:options="this.notificationService"
-						:data="serviceSelected"
-						@update="(value) => {serviceSelected = value}"
-					></NotificationDrodown>
-					<samp>
-						URL: 
-					</samp>
-					<input class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 
-						:disabled="!edit"
-						style="width: auto">
-					<samp>
-						Tag: 
-					</samp> 
-					<NotificationDrodown
-						:options="this.tags"
-						:data="tagSelected"
-						@update="(value) => {tagSelected = value}"
-					></NotificationDrodown>	
+					<div class="card-body flex-column d-flex align-items-center" style="margin: auto;">
+						<samp class="gap-2 d-flex">
+							Service: 
+						</samp>
+						<NotificationDrodown
+							:options="this.notifStore.Services"
+							:data="newDestinationData.service"
+							@update="(value) => {newDestinationData.service = value}"
+						></NotificationDrodown>
+					</div>
+					<div class="card-body flex-column d-flex align-items-center " v-for="x in newDestinationData.service.dataRequired" style="margin: auto;">
+						<samp class="gap-2 d-flex">
+							{{ x.display }}: 
+						</samp>
+						<input class="form-control form-control-sm form-control-dark rounded-3 flex-grow-1" 
+							v-model="x.value"
+							style="width: auto">
+					</div>
+					<div class="card-body flex-column d-flex align-items-center" style="margin: auto;">
+						<samp class="gap-2 d-flex">
+							Tag: 
+						</samp> 
+						<NotificationDrodown
+							:options="this.notifStore.Tags"
+							:data="newDestinationData.tag"
+							@update="(value) => {newDestinationData.tag = value}"
+						></NotificationDrodown>	
+					</div>
 				</div>
-				<div class="px-2 py-1 text-warning-emphasis bg-warning-subtle border border-warning-subtle rounded-2 d-inline-block mt-1">
+				<!-- <div class="px-2 py-1 text-warning-emphasis bg-warning-subtle border border-warning-subtle rounded-2 d-inline-block mt-1">
 					<small><i class="bi bi-exclamation-triangle-fill me-2"></i><span v-html="this.warningText"></span></small>
-				</div>
+				</div> -->
 				<button class="ms-auto btn bg-success-subtle text-success-emphasis border-1 border-success-subtle rounded-3 shadow-sm"
 					:class="{disabled: this.submitting}"
-						@click="this.submitNewAPIKey()"
+						@click="this.submitNewDestination()"
 				>
 					<i class="bi bi-check-lg me-2" v-if="!this.submitting"></i>
 					{{this.submitting ? 'Creating...':'Done'}}

@@ -1,63 +1,69 @@
 <script>
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
-import {v4} from "uuid";
 import {fetchGet, fetchPost} from "@/utilities/fetch.js";
-import NewDashboardAPIKey from "@/components/settingsComponent/dashboardAPIKeysComponents/newDashboardAPIKey.vue";
-import DashboardAPIKey from "@/components/settingsComponent/dashboardAPIKeysComponents/dashboardAPIKey.vue";
 import NewDestinationComponent from "./dashboardNotificationComponents/newDestinationComponent.vue";
+import DestinationComponent from "./dashboardNotificationComponents/destinationComponent.vue";
+import { NotificationConfigurationsStore } from "@/stores/notificationConfigurationStore";
 
 export default {
 	name: "dashboardNotificationSetup",
-	components: {DashboardAPIKey, NewDashboardAPIKey, NewDestinationComponent},
+	components: {DestinationComponent, NewDestinationComponent},
 	setup(){
 		const store = DashboardConfigurationStore();
-		return {store};
+		const notifStore = NotificationConfigurationsStore();
+		const oldDestinationData = {
+			service: notifStore.Services[0],
+			tag: notifStore.Tags[0]
+		}
+		return {store, notifStore, oldDestinationData};
 	},
 	data(){
 		return {
-			value: this.store.Configuration.Server.dashboard_api_key,
-			apiKeys: [],
-			newDashboardAPIKey: false
+			value: this.store.Configuration.Server.dashboard_notification,
+			newDestination: false,
+			updateDestination: false,
+			destinationsConfigs: [],
 		}
 	},
 	methods: {
-		async toggleDashboardAPIKeys(){
-			await fetchPost("/api/updateDashboardConfigurationItem", {
-				section: "Server",
-				key: "dashboard_api_key",
-				value: this.value
-			}, (res) => {
+		getNotificationConfig(){
+			fetchGet("/api/getAllNotificationConfig", {}, (res) => {
 				if (res.status){
-					this.store.Configuration.Peers[this.targetData] = this.value;
-					this.store.newMessage("Server", 
-						`API Keys function is successfully ${this.value ? 'enabled':'disabled'}`, "success")
-				}else{
-					this.value = this.store.Configuration.Peers[this.targetData];
-					this.store.newMessage("Server",
-						`API Keys function is failed ${this.value ? 'enabled':'disabled'}`, "danger")
+					this.destinationsConfigs = res.data
+					console.log(this.destinationsConfigs)
+				}
+				else{
+					this.store.newMessage("Server", res.message, "danger")
 				}
 			})
 		},
-	},
-	watch: {
-		value:{
-			immediate: true,
-			handler(newValue){
-				if (newValue){
-					fetchGet("/api/getDashboardAPIKeys", {}, (res) => {
-						console.log(res)
-						if(res.status){
-							this.apiKeys = res.data
-						}else{
-							this.apiKeys = []
-							this.store.newMessage("Server", res.message, "danger")
-						}
-					})
+		async toggleDashboardNotificationSystem(){
+			await fetchPost("/api/updateDashboardConfigurationItem", {
+				section: "Server",
+				key: "dashboard_notification",
+				value: this.value
+			}, (res) => {
+				if (res.status){
+					//this.store.Configuration.Peers[this.targetData] = this.value;
+					this.store.newMessage("Server", 
+						`Notification System is successfully ${this.value ? 'enabled':'disabled'}`, "success")
 				}else{
-					this.apiKeys = []
+					//this.value = this.store.Configuration.Peers[this.targetData];
+					this.store.newMessage("Server",
+						`Notification System is failed ${this.value ? 'enabled':'disabled'}`, "danger")
 				}
-			}
+			})
+		},
+		updateOldDestination(data){
+			this.oldDestinationData.service = this.notifStore.Services.find(x => x.name === data.name),
+			this.oldDestinationData.tag = this.notifStore.Tags.find(x => x.name === data.tag)
+			this.oldDestinationData.service.dataRequired[0].value = data.Id
+			this.oldDestinationData.service.dataRequired[1].value = data.Token
+			this.updateDestination = true
 		}
+	},
+	async mounted(){
+		await this.getNotificationConfig()
 	}
 }
 </script>
@@ -66,30 +72,30 @@ export default {
 	<div class="accordion" id="NotificationAccordion" >
 		<div class="card mb-4 shadow rounded-3">
 			<div class="card-header d-flex">
-				<!-- <h2 class="accordion-header"> -->
-					<button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#NotificationAccordionCollapse">
+				<div class="accordion-header" style="width: 85%;">
+					<button class="accordion-button collapsed rounded-3" type="button" data-bs-toggle="collapse" data-bs-target="#NotificationAccordionCollapse">
 						Notification Settings
 					</button>
-				<!-- </h2> -->
-				<!-- <div class="form-check form-switch ms-auto" v-if="!this.store.getActiveCrossServer()">
+				</div>
+				<h5 class="form-check form-switch align-items-center ms-auto" style="margin: auto;">
 					<input class="form-check-input" type="checkbox"
 						v-model="this.value"
-						@change="this.toggleDashboardAPIKeys()"
-						role="switch" id="allowAPIKeysSwitch">
-					<label class="form-check-label" for="allowAPIKeysSwitch">
+						@change="this.toggleDashboardNotificationSystem()"
+						role="switch" id="allowNotificationSwitch">
+					<label class="form-check-label" for="allowNotificationSwitch" style="font-size: 1.20em;">
 						{{this.value ? 'Enabled':'Disabled'}}
 					</label>
-				</div> -->
+				</h5>
+				
 			</div>
 			<div id="NotificationAccordionCollapse" 
 				class="accordion-collapse collapse" data-bs-parent="#NotificationAccordion">
 				<div class="card-body position-relative d-flex flex-column gap-2">
 					<button class="ms-auto btn bg-primary-subtle text-primary-emphasis border-1 border-primary-subtle rounded-3 shadow-sm"
-						@click="this.newDashboardAPIKey = true"
-						v-if="!this.store.getActiveCrossServer()">
+						@click="this.newDestination = true">
 						<i class="bi bi-send-plus me-2"></i> Add
 					</button>
-					<div class="card" style="height: 300px" v-if="this.apiKeys.length === 0">
+					<div class="card" style="height: 300px" v-if="this.destinationsConfigs.length === 0">
 						<div class="card-body d-flex text-muted">
 								<span class="m-auto">
 									No Destination
@@ -97,16 +103,26 @@ export default {
 						</div>
 					</div>
 					<div class="d-flex flex-column gap-2 position-relative" v-else style="min-height: 300px">
-						<TransitionGroup name="apiKey">
-							<DashboardAPIKey v-for="key in this.apiKeys" :apiKey="key"
-											:key="key.Key"
-											@deleted="(nkeys) => this.apiKeys = nkeys"></DashboardAPIKey>
+						<TransitionGroup name="Destination">
+							<DestinationComponent v-for="dest in this.destinationsConfigs" 
+											:destinationConfig = dest
+											@deleted="(data) => this.destinationsConfigs = data"
+											@update="(data) => this.updateOldDestination(data)">
+							</DestinationComponent>
 						</TransitionGroup>
 					</div>
-					<Transition name="zoomReversed">
-						<NewDestinationComponent v-if="this.newDashboardAPIKey"
-											@created="(data) => this.apiKeys = data"
-						@close="this.newDashboardAPIKey = false"
+					<Transition name="addNewDestination">
+						<NewDestinationComponent v-if="this.newDestination"
+							:oldDestination = undefined
+							@created="(data) => this.destinationsConfigs = data"
+							@close="this.newDestination = false"
+						></NewDestinationComponent>
+					</Transition>
+					<Transition name="updateOldDestination">
+						<NewDestinationComponent v-if="this.updateDestination"
+							:oldDestination = oldDestinationData
+							@created="(data) => this.destinationsConfigs = data"
+							@close="this.updateDestination = false"
 						></NewDestinationComponent>
 					</Transition>
 				</div>
@@ -116,23 +132,4 @@ export default {
 </template>
 
 <style scoped>
-.apiKey-move, /* apply transition to moving elements */
-.apiKey-enter-active,
-.apiKey-leave-active {
-	transition: all 0.5s ease;
-}
-
-.apiKey-enter-from,
-.apiKey-leave-to {
-	opacity: 0;
-	
-	transform: translateY(30px) scale(0.9);
-}
-
-/* ensure leaving items are taken out of layout flow so that moving
-   animations can be calculated correctly. */
-.apiKey-leave-active {
-	position: absolute;
-	width: 100%;
-}
 </style>

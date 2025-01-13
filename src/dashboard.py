@@ -1144,7 +1144,8 @@ class DashboardConfig:
                 "dashboard_refresh_interval": "60000",
                 "dashboard_sort": "status",
                 "dashboard_theme": "dark",
-                "dashboard_api_key": "false"
+                "dashboard_api_key": "false",
+                "dashboard_notification": "false"                       #is for turn the notification system on/off
             },
             "Peers": {
                 "peer_global_DNS": "1.1.1.1",
@@ -2179,6 +2180,105 @@ def index():
     """
     return render_template('index.html', APP_PREFIX=APP_PREFIX)
 
+'''
+Notification Settings API
+'''
+
+@app.route(f'{APP_PREFIX}/api/getAllNotificationConfig', methods=['GET'])
+def API_getAllNotificationConfig():
+    try:
+        return ResponseObject(status=True, data=DashboardNotification.getAll())
+    except Exception as e :
+        return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
+
+@app.route(f'{APP_PREFIX}/api/addNotificationConfig', methods=['POST'])
+def API_addNotificationConfig():
+    try:
+        data = request.get_json()
+        if ("name" not in data.keys() or "Id" not in data.keys() or "tag" not in data.keys() or
+            "Token" not in data.keys() or data['name'] == "" or data['Id'] == "" or data['tag'] == "" or
+                data['Token'] == "") :
+            return ResponseObject(status=False,
+                                  message="Please provide all data required of the destination you want to add",
+                                  data=data)
+        else:
+            if data['name'] == "discord":
+                url = f"https://discord.com/api/webhooks/{data['Id']}/{data['Token']}"
+            else:
+                url = f"tgram://{data['Token']}/{data['Id']}"
+            result = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (url,)).fetchall()
+            if result:
+                return ResponseObject(status=False,
+                                      message="This destination is already in use",
+                                      data=data)
+            else:
+                urls = DashboardNotification.add(name=data['name'], destinationUrl=url, tag= data['tag'])
+                return ResponseObject(status=True, data=urls)
+    except Exception as e:
+        return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
+
+@app.route(f'{APP_PREFIX}/api/deleteNotificationConfig', methods=['POST'])
+def API_deleteNotificationConfig():
+    try:
+        data = request.get_json()
+        if ("name" not in data.keys() or "Id" not in data.keys() or "tag" not in data.keys() or
+            "Token" not in data.keys() or data['name'] == "" or data['Id'] == "" or data['tag'] == "" or
+                data['Token'] == ""):
+            return ResponseObject(status=False,
+                                  message="Please provide all data required of the destination you want to add",
+                                  data=data)
+        else:
+            if data['name'] == "discord":
+                url = f"https://discord.com/api/webhooks/{data['Id']}/{data['Token']}"
+            else:
+                url = f"tgram://{data['Token']}/{data['Id']}"
+            result = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (url,)).fetchall()
+            if not result:
+                return ResponseObject(status=False,
+                                      message="This destination doesn't exist",
+                                      data=data)
+            else:
+                urls = DashboardNotification.delete(name=data['name'], destinationUrl=url, tag= data['tag'])
+                return ResponseObject(status=True, data=urls)
+    except Exception as e:
+        return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
+
+@app.route(f'{APP_PREFIX}/api/updateNotificationConfig', methods=['POST'])                         #TODO da finire
+def API_updateNotificationConfig():
+    try:
+        data = request.get_json()
+        if ("name" not in data.keys() or "Id" not in data.keys() or "tag" not in data.keys() or
+                "Token" not in data.keys() or "oldName" not in data.keys() or "oldId" not in data.keys() or
+                "oldToken" not in data.keys() or "oldTag" not in data.keys() or data['oldName'] == "" or
+                data['oldId'] == "" or data['oldToken'] == "" or data['oldTag'] == "" or data['name'] == "" or
+                data['Id'] == "" or data['tag'] == "" or data['Token'] == ""):
+            return ResponseObject(status=False,
+                                  message="Please provide all data required of the destination you want to add",
+                                  data=data)
+        else:
+            if data['oldName'] == "discord":
+                oldUrl = f"https://discord.com/api/webhooks/{data['oldId']}/{data['oldToken']}"
+            else:
+                oldUrl = f"tgram://{data['oldToken']}/{data['oldId']}"
+
+            if data['name'] == "discord":
+                newUrl = f"https://discord.com/api/webhooks/{data['Id']}/{data['Token']}"
+            else:
+                newUrl = f"tgram://{data['Token']}/{data['Id']}"
+
+            result = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (oldUrl,)).fetchall()
+            if not result:
+                return ResponseObject(status=False,
+                                      message="This destination doesn't exist",
+                                      data=data)
+            else:
+                urls = DashboardNotification.update(oldName=data['oldName'], newName=data['name'],
+                                                    oldDestinationUrl=oldUrl, newDestinationUrl=newUrl,
+                                                    oldTag=data['oldTag'], newTag=data['tag'])
+                return ResponseObject(status=True, data=urls)
+    except Exception as e:
+        return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
+
 
 def backGroundThread():
     with app.app_context():
@@ -2213,7 +2313,7 @@ def gunicornConfig():
 
 
 '''
-Notification API
+Notification System
 '''
 
 class DashboardNotification:
@@ -2232,7 +2332,7 @@ class DashboardNotification:
             while True:
                 item = queue.get()
                 if isinstance(item, Apprise):
-                    notificationObject = item #protobuff socket
+                    notificationObject = item                   #TODO aggiungere protobuff socket
                 elif isinstance(item, dict):
                     if item['tag']:
                         notificationObject.notify(body=item['message'], tag=item['tag'])
@@ -2265,25 +2365,82 @@ class DashboardNotification:
 
     def notify(self, message: str = "", tag: str = ""):
         try:
-            self.sendingQueue.put({"message": message, "tag": tag})
+            result, value=DashboardConfig.GetConfig(section="Server", key="dashboard_notification")
+            if result and value:
+                self.sendingQueue.put({"message": message, "tag": tag})
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
     def add(self, name: str, destinationUrl: str, tag: str =""):
         try:
             url = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (destinationUrl,)).fetchall()
-            if url is not None:
+            if not url:
                 sqlUpdate("INSERT INTO DestinationUrl (name, url, tag) VALUES (?, ?, ?)",(name, destinationUrl, tag,))
                 self.notification.add(servers=destinationUrl, tag=tag)
                 self.sendingQueue.put(self.notification)
                 self.urls.append({"name": name, "url": destinationUrl, "tag": tag})
+            return self.getAll()
         except Exception as e:
             print(f"[WGDashboard] Error to add new destination: {str(e)}")
 
-DashboardNotification: DashboardNotification = DashboardNotification()
-DashboardNotification.add(name='Discord', destinationUrl='https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs', tag='info')
-DashboardNotification.add(name='Telegram',destinationUrl='tgram://7867719981:AAHcBpAcDbPI_rFsesRDpvhITkio6a_e_70/962704896', tag='debug')
+    def delete(self, name: str, destinationUrl: str, tag: str):
+        try:
+            sqlUpdate("DELETE FROM DestinationUrl WHERE url = ?", (destinationUrl,))
+            self.urls.remove({"name": name, "url": destinationUrl, "tag": tag})
+            self.notification= Apprise()
+            for t in self.urls :
+                self.notification.add(servers=t['url'], tag=t['tag'])
+            self.sendingQueue.put(self.notification)
+            return self.getAll()
+        except Exception as e:
+            print(f"[WGDashboard] Error to delete the destination: {str(e)}")
 
+    def update(self, oldName:str, newName: str, oldDestinationUrl: str, newDestinationUrl: str, oldTag: str, newTag: str):
+        try:
+            url = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (oldDestinationUrl,)).fetchall()
+            if url :
+                sqlUpdate("UPDATE DestinationUrl SET name = ?, url = ?, tag = ? WHERE url = ?", (newName, newDestinationUrl, newTag, oldDestinationUrl,))
+                self.urls.remove({"name": oldName, "url": oldDestinationUrl, "tag": oldTag})
+                self.urls.append({"name": newName, "url": newDestinationUrl, "tag": newTag})
+                self.notification = Apprise()
+                for t in self.urls:
+                    self.notification.add(servers=t['url'], tag=t['tag'])
+                self.sendingQueue.put(self.notification)
+            return self.getAll()
+        except Exception as e:
+            print(f"[WGDashboard] Error to update the destination: {str(e)}")
+
+    def getAll(self):
+        configs = []
+        for u in self.urls:
+            if u['name'] == "discord":
+                url = u['url'].split("https://discord.com/api/webhooks/")  #Discord link = https://discord.com/api/webhooks/<WebhookID>/<WebhookToken>
+                url = url[1].split("/")    # url = ["<WebhookID>","<WebhookToken>"]
+                configs.append(
+                    { "name": u['name'],
+                      "Id" : url[0],
+                      "Token" : url[1],
+                      "tag": u['tag']
+                    }
+                )
+            else:
+                url = u['url'].split("tgram://")  #Telegram link = tgram://<BotToken>/<ChatID>
+                url = url[1].split("/")    # url = ["<BotToken>","<ChatID>"]
+                configs.append(
+                    {"name": u['name'],
+                     "Id": url[1],
+                     "Token": url[0],
+                     "tag": u['tag']
+                     }
+                )
+        return configs
+
+
+
+
+DashboardNotification: DashboardNotification = DashboardNotification()
+# DashboardNotification.add(name='discord', destinationUrl='https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs', tag='info')
+# DashboardNotification.add(name='telegram',destinationUrl='tgram://7867719981:AAHcBpAcDbPI_rFsesRDpvhITkio6a_e_70/962704896', tag='debug')
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()
