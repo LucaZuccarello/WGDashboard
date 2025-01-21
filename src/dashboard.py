@@ -28,6 +28,7 @@ from flask_cors import CORS
 
 from icmplib import ping, traceroute
 from apprise import Apprise
+import messages_pb2 as AppriseMessage
 
 # Import other python files
 import threading
@@ -2243,7 +2244,7 @@ def API_deleteNotificationConfig():
     except Exception as e:
         return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
 
-@app.route(f'{APP_PREFIX}/api/updateNotificationConfig', methods=['POST'])                         #TODO da finire
+@app.route(f'{APP_PREFIX}/api/updateNotificationConfig', methods=['POST'])
 def API_updateNotificationConfig():
     try:
         data = request.get_json()
@@ -2323,21 +2324,22 @@ class DashboardNotification:
         self.urls: list[dict[str, str]] = []
 
         self.configure()
-        self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue,), name='Background', daemon=True)
+        self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue, AppriseMessage.Message(),), name='Background', daemon=True)
         self.background_process.start()
 
-    def backgroundProcess(self, queue: SimpleQueue):
+    def backgroundProcess(self, queue: SimpleQueue, message: AppriseMessage):
         notificationObject: Apprise = Apprise()
         try:
             while True:
                 item = queue.get()
                 if isinstance(item, Apprise):
-                    notificationObject = item                   #TODO aggiungere protobuff socket
-                elif isinstance(item, dict):
-                    if item['tag']:
-                        notificationObject.notify(body=item['message'], tag=item['tag'])
+                    notificationObject = item
+                elif isinstance(item, bytes):
+                    message.ParseFromString(item)  #deserializzo l'elemento all'interno della coda
+                    if message.tag:
+                        notificationObject.notify(body=message.text, tag=message.tag)
                     else:
-                        notificationObject.notify(body=item['message'])
+                        notificationObject.notify(body=message.text)
         except Exception as e:
             notificationObject.notify(body=str(e))
 
@@ -2367,7 +2369,10 @@ class DashboardNotification:
         try:
             result, value=DashboardConfig.GetConfig(section="Server", key="dashboard_notification")
             if result and value:
-                self.sendingQueue.put({"message": message, "tag": tag})
+                newMessage = AppriseMessage.Message()
+                newMessage.text = message
+                newMessage.tag = tag
+                self.sendingQueue.put(newMessage.SerializeToString())  #Serializzo il messaggio e lo metto nella coda
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
