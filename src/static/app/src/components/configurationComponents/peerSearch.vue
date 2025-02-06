@@ -102,6 +102,13 @@ export default {
 				       @keyup="this.debounce()"
 				       v-model="this.searchString">
 			</div>
+			<RouterLink	
+				to="net"
+				class="btn text-secondary-emphasis bg-secondary-subtle rounded-3 border-1 border-secondary-subtle shadow-sm"
+				type="button" aria-expanded="false">
+				<i class="bi bi-radar"></i>
+				Network Graph
+			</RouterLink>
 			<button 
 				@click="this.showDisplaySettings = true"
 				class="btn text-secondary-emphasis bg-secondary-subtle rounded-3 border-1 border-secondary-subtle shadow-sm"

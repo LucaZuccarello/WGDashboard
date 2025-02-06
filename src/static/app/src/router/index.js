@@ -16,6 +16,7 @@ import Ping from "@/views/ping.vue";
 import Traceroute from "@/views/traceroute.vue";
 import Totp from "@/components/setupComponent/totp.vue";
 import Share from "@/views/share.vue";
+import NetTopology from '@/views/netTopology.vue';
 
 const checkAuth = async () => {
   let result = false
@@ -89,6 +90,11 @@ const router = createRouter({
               path: 'create',
               component: PeerCreate
             },
+            {
+              name: "Net Topology",
+              path: 'net',
+              component: NetTopology
+            }
           ]
         },
         

@@ -615,8 +615,8 @@ export default {
 <style scoped>
 .peerNav .nav-link{
 	&.active{
-		//background: linear-gradient(var(--degree), var(--brandColor1) var(--distance2), var(--brandColor2) 100%);
-		//color: white;
+		/*background: linear-gradient(var(--degree), var(--brandColor1) var(--distance2), var(--brandColor2) 100%);
+		color: white;*/
 		background-color: #efefef;
 	}
 }

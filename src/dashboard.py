@@ -124,7 +124,7 @@ class DashboardLogger:
         self.loggerdb.row_factory = sqlite3.Row
         self.__createLogDatabase()
         self.log(Message="WGDashboard started")
-        DashboardNotification.notify(message="WGDashboard started", tag="debug")
+        DashboardNotification.notify(message="WGDashboard started", tags=["info"])
         # notify(message="WGDashboard started")
 
     def __createLogDatabase(self):
@@ -146,11 +146,11 @@ class DashboardLogger:
                     "INSERT INTO DashboardLog (LogID, URL, IP, Status, Message) VALUES (?, ?, ?, ?, ?)", (str(uuid.uuid4()), URL, IP, Status, Message,))
                 if self.loggerdb.in_transaction:
                     self.loggerdb.commit()
+                DashboardNotification.notify(message=f"URL: {URL},\nIP: {IP},\nStatus: {Status},\nMessage: {Message}", tags=["debug"])
                 return True
         except Exception as e:
             print(f"[WGDashboard] Access Log Error: {str(e)}")
-            DashboardNotification.notify(message=f"[WGDashboard] Access Log Error: {str(e)}")
-            # notify(message=f"[WGDashboard] Access Log Error: {str(e)}")
+            DashboardNotification.notify(message=f"[WGDashboard] Access Log Error: {str(e)}", tags=["debug","error"])
             return False
     
 class PeerJobLogger:
@@ -180,12 +180,10 @@ class PeerJobLogger:
                                             (str(uuid.uuid4()), JobID, Status, Message,))
                 if self.loggerdb.in_transaction:
                     self.loggerdb.commit()
-                DashboardNotification.notify(message=Message, tag="debug")
-                # notify(message=Message)
+                DashboardNotification.notify(message=Message, tags=["debug"])
         except Exception as e:
             print(f"[WGDashboard] Peer Job Log Error: {str(e)}")
-            DashboardNotification.notify(f"[WGDashboard] Peer Job Log Error: {str(e)}")
-            # notify(message=f"[WGDashboard] Peer Job Log Error: {str(e)}")
+            DashboardNotification.notify(message=f"[WGDashboard] Peer Job Log Error: {str(e)}", tags=["error","debug"])
             return False
         return True
     
@@ -299,7 +297,7 @@ class PeerJobs:
                     INSERT INTO PeerJobs VALUES (?, ?, ?, ?, ?, ?, strftime('%Y-%m-%d %H:%M:%S','now'), NULL, ?)
                     ''', (Job.JobID, Job.Configuration, Job.Peer, Job.Field, Job.Operator, Job.Value, Job.Action,))
                     JobLogger.log(Job.JobID, Message=f"Job is created if {Job.Field} {Job.Operator} {Job.Value} then {Job.Action}")
-                    
+                    DashboardNotification.notify(message=f"Job is created if {Job.Field} {Job.Operator} {Job.Value} then {Job.Action}", tags=["info"])
                 else:
                     currentJob = jobdbCursor.execute('SELECT * FROM PeerJobs WHERE JobID = ?', (Job.JobID, )).fetchone()
                     if currentJob is not None:
@@ -308,6 +306,9 @@ class PeerJobs:
                             ''', (Job.Field, Job.Operator, Job.Value, Job.Action, Job.JobID))
                         JobLogger.log(Job.JobID, 
                                       Message=f"Job is updated from if {currentJob['Field']} {currentJob['Operator']} {currentJob['value']} then {currentJob['Action']}; to if {Job.Field} {Job.Operator} {Job.Value} then {Job.Action}")
+                        DashboardNotification.notify(
+                            message=f"Job is updated from if {currentJob['Field']} {currentJob['Operator']} {currentJob['value']} then {currentJob['Action']}; to if {Job.Field} {Job.Operator} {Job.Value} then {Job.Action}",
+                            tags=["info"])
                 self.jobdb.commit()
                 self.__getJobs()
         
@@ -315,6 +316,7 @@ class PeerJobs:
                 filter(lambda x: x.Configuration == Job.Configuration and x.Peer == Job.Peer and x.JobID == Job.JobID,
                        self.Jobs))
         except Exception as e:
+            DashboardNotification.notify(message=str(e), tags=["error","debug"])
             return False, str(e)
 
     def deleteJob(self, Job: PeerJob) -> tuple[bool, list] | tuple[bool, str]:
@@ -328,6 +330,7 @@ class PeerJobs:
                 ''', (Job.JobID,))
                 self.jobdb.commit()
             JobLogger.log(Job.JobID, Message=f"Job is removed due to being deleted or finshed.")
+            DashboardNotification.notify(message=f"Job is removed due to being deleted or finshed.", tags=["info"])
             self.__getJobs()
             return True, list(
                 filter(lambda x: x.Configuration == Job.Configuration and x.Peer == Job.Peer and x.JobID == Job.JobID,
@@ -361,11 +364,14 @@ class PeerJobs:
                             JobLogger.log(job.JobID, s["status"], 
                                           f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed."
                             )
+                            DashboardNotification.notify(message=f"Peer {fp.id} from {c.Name} is successfully {job.Action}ed.",
+                                                         tags=["info"])
                             needToDelete.append(job)
                         else:
                             JobLogger.log(job.JobID, s["status"],
                                           f"Peer {fp.id} from {c.Name} failed {job.Action}ed."
                             )
+                            DashboardNotification.notify(message=f"Peer {fp.id} from {c.Name} failed {job.Action}ed.", tags=["error"])
         for j in needToDelete:
             self.deleteJob(j)
 
@@ -906,15 +912,14 @@ class WireguardConfiguration:
             try:
                 check = subprocess.check_output(f"wg-quick down {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
-                DashboardNotification.notify(message=f"Tunnel {self.Name} turned off")
-                # notify(message="Tunnel turned off")
+                DashboardNotification.notify(message=f"Tunnel {self.Name} turned off", tags=["debug", "info"])
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         else:
             try:
                 check = subprocess.check_output(f"wg-quick up {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
-                DashboardNotification.notify(message=f"Tunnel {self.Name} turned on")
+                DashboardNotification.notify(message=f"Tunnel {self.Name} turned on", tags=["debug","info"])
                 # notify(message="Tunnel turned on")
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
@@ -1557,12 +1562,10 @@ def API_AuthenticateLogin():
         resp.set_cookie("authToken", authToken)
         session.permanent = True
         DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login success: {data['username']}")
-        DashboardNotification.notify(message=f"Login success: {data['username']}", tag="info")
-        # notify(message=f"Login success: {data['username']}")
+        DashboardNotification.notify(message=f"Login success: {data['username']}", tags=["info"])
         return resp
     DashboardLogger.log(str(request.url), str(request.remote_addr), Message=f"Login failed: {data['username']}")
-    DashboardNotification.notify(message=f"Login failed: {data['username']}")
-    # notify(message=f"Login failed: {data['username']}")
+    DashboardNotification.notify(message=f"Login failed: {data['username']}", tags=["info"])
     if totpEnabled:
         return ResponseObject(False, "Sorry, your username, password or OTP is incorrect.")
     else:
@@ -1573,8 +1576,7 @@ def API_AuthenticateLogin():
 def API_SignOut():
     resp = ResponseObject(True, "")
     resp.delete_cookie("authToken")
-    DashboardNotification.notify(message="Sing Out", tag="info")
-    # notify(message="Sing Out")
+    DashboardNotification.notify(message="Sing Out", tags=["info", "debug"])
     return resp
 
 
@@ -2213,7 +2215,9 @@ def API_addNotificationConfig():
                                       message="This destination is already in use",
                                       data=data)
             else:
-                urls = DashboardNotification.add(name=data['name'], destinationUrl=url, tag= data['tag'])
+                urls = DashboardNotification.add(name=data['name'], destinationUrl=url, tag=data['tag'])
+                DashboardNotification.notify(message=f"New {data['name']} destination with URL: {url} and TAG: {data['tag']} succesfully added", tags=["debug"])
+                DashboardNotification.notify(message=f"Hi, welcome to your new {data['tag']} tunnel", tags=[data['tag']])
                 return ResponseObject(status=True, data=urls)
     except Exception as e:
         return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
@@ -2242,6 +2246,7 @@ def API_deleteNotificationConfig():
                 urls = DashboardNotification.delete(name=data['name'], destinationUrl=url, tag= data['tag'])
                 return ResponseObject(status=True, data=urls)
     except Exception as e:
+        DashboardNotification.notify(message=f"Something goes wrong:{str(e)}", tags=["debug", "error"])
         return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
 
 @app.route(f'{APP_PREFIX}/api/updateNotificationConfig', methods=['POST'])
@@ -2276,8 +2281,14 @@ def API_updateNotificationConfig():
                 urls = DashboardNotification.update(oldName=data['oldName'], newName=data['name'],
                                                     oldDestinationUrl=oldUrl, newDestinationUrl=newUrl,
                                                     oldTag=data['oldTag'], newTag=data['tag'])
+                DashboardNotification.notify(
+                    message=f"{data['name']} destination with URL: {newUrl} and TAG: {data['tag']} succesfully updated",
+                    tags=["debug"])
+                DashboardNotification.notify(message=f"Hi, welcome to your new {data['tag']} tunnel",
+                                             tags=[data['tag']])
                 return ResponseObject(status=True, data=urls)
     except Exception as e:
+        DashboardNotification.notify(message=f"Something goes wrong:{str(e)}", tags=["debug","error"])
         return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
 
 
@@ -2365,14 +2376,17 @@ class DashboardNotification:
         except Exception as e:
             print(f"[WGDashboard] Error configuring notification system: {str(e)}")
 
-    def notify(self, message: str = "", tag: str = ""):
+    def notify(self, message: str = "", tags: list[str]=None):
+        if tags is None:
+            tags = [""]
         try:
             result, value=DashboardConfig.GetConfig(section="Server", key="dashboard_notification")
             if result and value:
-                newMessage = AppriseMessage.Message()
-                newMessage.text = message
-                newMessage.tag = tag
-                self.sendingQueue.put(newMessage.SerializeToString())  #Serializzo il messaggio e lo metto nella coda
+                for tag in tags :
+                    newMessage = AppriseMessage.Message()
+                    newMessage.text = message
+                    newMessage.tag = tag
+                    self.sendingQueue.put(newMessage.SerializeToString())  #Serializzo il messaggio e lo metto nella coda
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
@@ -2444,8 +2458,10 @@ class DashboardNotification:
 
 
 DashboardNotification: DashboardNotification = DashboardNotification()
-# DashboardNotification.add(name='discord', destinationUrl='https://discord.com/api/webhooks/1306964770481770577/CLHk45BS72YuUqjDlnV97KIXtnVwIDc6mBxI15dsnfX5yxSlzOLtt3yXZihqMoWMXGCs', tag='info')
-# DashboardNotification.add(name='telegram',destinationUrl='tgram://7867719981:AAHcBpAcDbPI_rFsesRDpvhITkio6a_e_70/962704896', tag='debug')
+# DashboardNotification.add(name='discord', destinationUrl='https://discord.com/api/webhooks/1331299726238416969/q_AWUXOGAzxtmPW9Mn3ruWrUjL4yYKq9y-sU8Y5Nwwm_4mahUbhfwvArBhrD4mdyaW4C', tag='error')
+# DashboardNotification.add(name='telegram',destinationUrl='tgram://7867719981:AAHcBpAcDbPI_rFsesRDpvhITkio6a_e_70/962704896', tag='info')
+# DashboardNotification.add(name='discord', destinationUrl='https://discord.com/api/webhooks/1331299819515547729/Y_SWmtFTrXkhWP4vpvAh_7Uos_jdTEWmN87hk25WNNVcJi3ICmqBPB4jnqc3gckihmo5', tag='debug')
+
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()

@@ -17,6 +17,7 @@
     "bootstrap": "^5.3.2",
     "bootstrap-icons": "^1.11.2",
     "cidr-tools": "^7.0.4",
+    "d3-force": "^3.0.0",
     "dayjs": "^1.11.12",
     "electron-builder": "^24.13.3",
     "fuse.js": "^7.0.0",
@@ -27,6 +28,7 @@
     "qrcode": "^1.5.3",
     "qrcodejs": "^1.0.0",
     "uuid": "^9.0.1",
+    "v-network-graph": "^0.9.18",
     "vue": "^3.4.29",
     "vue-chartjs": "^5.3.0",
     "vue-router": "^4.2.5"

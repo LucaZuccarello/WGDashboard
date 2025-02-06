@@ -7,6 +7,8 @@ import '@vuepic/vue-datepicker/dist/main.css'
 
 import {createApp, markRaw} from 'vue'
 import { createPinia } from 'pinia'
+import VNetworkGraph from "v-network-graph"
+import "v-network-graph/lib/style.css"
 
 import App from './App.vue'
 import router from './router'
@@ -21,6 +23,7 @@ pinia.use(({ store }) => {
 })
 
 app.use(pinia)
+app.use(VNetworkGraph)
 
 
 app.mount('#app')
