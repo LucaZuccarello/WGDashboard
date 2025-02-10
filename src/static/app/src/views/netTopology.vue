@@ -16,11 +16,8 @@ export default {
             menuTargetNode: "",
             zoomLevel : 1.5,
             counter: 1,
-            layers : {
-                badge: "nodes",
-            },
             nodes : {
-                node0: { name: "Server", active: false, },
+                node0: { name: "Server", active: false, showText: false},
             },
             edges : {},
             layouts: {
@@ -40,23 +37,12 @@ export default {
                     layoutHandler: new ForceLayout({
                         positionFixedByDrag: false,
                         createSimulation: (d3, nodes, edges) => {
-                        // d3-force parameters
                             const forceLink = d3.forceLink(edges).id(d => d.id)
                             return d3
                                 .forceSimulation(nodes)
                                 .force("edge", forceLink.distance(60).strength(0.5))
                                 .force("charge", d3.forceManyBody().strength(-800))
-                                //.force("center", d3.forceCenter().strength(0.05))
                                 .alphaMin(0.001)
-                            // * The following are the default parameters for the simulation.
-                            // const forceLink = d3.forceLink<ForceNodeDatum, ForceEdgeDatum>(edges).id(d => d.id)
-                            /*return d3
-                                .forceSimulation(nodes)
-                                .force("edge", forceLink.distance(100))
-                                .force("charge", d3.forceManyBody())
-                                .force("collide", d3.forceCollide(50).strength(0.2))
-                                .force("center", d3.forceCenter().strength(0.05))
-                                .alphaMin(0.001)*/
                         }
                     }),
                     scalingObjects: true,
@@ -75,7 +61,7 @@ export default {
                         radius: 20,
                         color: "#6013ad",
                         //color: n => (n.name === "Server" ? "#ff0000" : "#6013ad"),
-                        strokeWidth: 3,
+                        strokeWidth: 2,
                         strokeColor: n => (n.active ? "#808000" : "#ff0000")
                     },
                     hover: {
@@ -83,10 +69,12 @@ export default {
                         //color: n => (n.name === "Server" ? "#8b0000" : "#430d78"),
                     },
                     label: {
-                        fontSize: 18,
-                        color: "#ff0000",
+                        visible: true,
+                        fontFamily: 'Arial',
+                        fontSize: 14,
+                        color: "white",
+                        direction: "south",
                         directionAutoAdjustment: true,
-                        visible: n => (n.name === "Server")
                     }
                 },
             })
@@ -118,7 +106,7 @@ export default {
             this.configurationPeers.forEach((x) => {
                 const nodeId = `node${this.counter}`
                 const edgeId = `edge${this.counter}`
-                this.nodes[nodeId] = {name: x.name, active: true}
+                this.nodes[nodeId] = {name: x.name, active: true, showText: false}
                 this.edges[edgeId] = {source: "node0", target: nodeId }
                 this.counter++
             })
@@ -129,7 +117,6 @@ export default {
             // Disable browser's default context menu
             event.stopPropagation()
             event.preventDefault()
-                console.log(JSON.stringify(this.$refs.nodeMenu))
                 if (this.$refs.nodeMenu) {
                     this.menuTargetNode = this.nodes[node].name ?? ""
                     this.showContextMenu(this.$refs.nodeMenu, event)
@@ -149,6 +136,35 @@ export default {
             };
             
             document.addEventListener("pointerdown", handler, { passive: true, capture: true });
+        },
+
+        showText(nodeId){
+            this.nodes[nodeId].showText = true
+        },
+
+        hideText(nodeId){
+            this.nodes[nodeId].showText = false
+        },
+
+        getTextWidth(text, fontSize, fontFamily) {
+            const canvas = document.createElement("canvas");
+            const context = canvas.getContext("2d");
+            context.font = `${fontSize}px ${fontFamily}`;
+            const width = context.measureText(text).width;
+            return width;
+        },
+
+
+        getTranslateX(x, text, fontSize, fontFamily){
+            if(x == 0){
+                return 0
+            }
+            else if(x < 0){
+                return x - (this.getTextWidth(text, fontSize, fontFamily)) / 2
+            }
+            else{
+                return x + (this.getTextWidth(text, fontSize, fontFamily)) / 2
+            }
         }
 
     },
@@ -162,7 +178,7 @@ export default {
                 this.configurationInfo = [];
                 this.configurationPeers = [];
                 this.nodes = {
-                    node0: { name: "Server", active: false},
+                    node0: { name: "Server", active: false, showText: false},
                 }
                 this.edges = {}
                 if (id){
@@ -193,55 +209,113 @@ export default {
                 :edges="this.edges" 
                 :configs="this.configs" 
                 :layouts="this.layouts"
-                :layers="this.layers"
                 :event-handlers="this.eventHandlers"
-            >
+            > 
+            <!-- <text  19/8    65/40
+                        :x="x"
+                        :y="y"
+                        :font-size="config.fontSize * scale"
+                        :text-anchor="textAnchor"
+                        :dominant-baseline="dominantBaseline"
+                        :fill="config.color"
+                    >{{ text }}</text> -->
+                <template
+                    #override-node-label="{
+                        nodeId, scale, text, x, y, config, textAnchor, dominantBaseline
+                    }"
+                    >
+                    <foreignObject 
+                        v-show="this.nodes[nodeId].showText"
+                        :x="x * scale - (this.getTextWidth(text, config.fontSize * scale, config.fontFamily) + 20) / 2" 
+                        :y="y * scale - (config.fontSize * scale + 20 )/ 2" 
+                        :width="this.getTextWidth(text, config.fontSize * scale, config.fontFamily) + 20" 
+                        :height="config.fontSize * scale + 20" 
+                        :transform="`translate(${this.getTranslateX(x, text, config.fontSize * scale, config.fontFamily)} ${y})`"
+                    >
+                        <div 
+                            xmlns="http://www.w3.org/1999/xhtml"
+                            :style="{
+                            fontSize: config.fontSize * scale + 'px', 
+                            fontFamily: config.fontFamily,
+                            textAlign: 'center',  /* Usa 'textAnchor' per l'allineamento orizzontale */
+                            color: config.color, 
+                            backgroundColor: 'black',
+                            padding: '5px', 
+                            borderRadius: '5px',
+                            whiteSpace: 'nowrap'}"
+                        >
+                            {{ text }}
+                        </div>
+                    </foreignObject>
+                    
+                </template>
 
                 <template #override-node="{ nodeId, scale, config, ...slotProps}">
-                    <circle 
-                        :r="config.radius * scale" 
-                        :fill="config.color" 
-                        v-bind="slotProps" 
-                        :stroke-width="config.strokeWidth" 
-                        :stroke="config.strokeColor"
-                    />
-                    <!-- <image
-                        class="icon"
-                        :x="-config.radius * scale + 7"  
-                        :y="-config.radius * scale + 7"
-                        :width="config.radius * scale * 2 - 15" 
-                        :height="config.radius * scale * 2 - 15"
-                        :xlink:href="`/static/img/pc.svg`"
-                    /> -->
                     <svg 
                         v-if="this.nodes[nodeId].name === 'Server'" 
                         class="server"
                         xmlns="http://www.w3.org/2000/svg"
-                        :y="-config.radius * scale + 7" 
-                        :x="-config.radius * scale + 7"
-                        :width="config.radius * scale * 2 - 15" 
-                        :height="config.radius * scale * 2 - 15"  
+                        :x="-config.radius * scale"
+                        :y="-config.radius * scale"
+                        :width="config.radius * scale * 2" 
+                        :height="config.radius * scale * 2"  
                         :fill="'#ffffff'" 
-                        viewBox="0 0 16 16"
+                        viewBox="-5 -5 26 26"
+                        @mouseenter="() => {
+                            this.showText(nodeId)
+                        }"
+                        @mouseleave="() => {
+                            this.hideText(nodeId)
+                        }"
                     >
+                        <circle 
+                            cx="8" 
+                            cy="8" 
+                            r="12"
+                            :fill="config.color" 
+                            v-bind="slotProps" 
+                            :stroke-width="config.strokeWidth" 
+                            :stroke="config.strokeColor"
+                        />
                         <path d="M1.333 2.667C1.333 1.194 4.318 0 8 0s6.667 1.194 6.667 2.667V4c0 1.473-2.985 2.667-6.667 2.667S1.333 5.473 1.333 4z"/>
                         <path d="M1.333 6.334v3C1.333 10.805 4.318 12 8 12s6.667-1.194 6.667-2.667V6.334a6.5 6.5 0 0 1-1.458.79C11.81 7.684 9.967 8 8 8s-3.809-.317-5.208-.876a6.5 6.5 0 0 1-1.458-.79z"/>
-                        <path d="M14.667 11.668a6.5 6.5 0 0 1-1.458.789c-1.4.56-3.242.876-5.21.876-1.966 0-3.809-.316-5.208-.876a6.5 6.5 0 0 1-1.458-.79v1.666C1.333 14.806 4.318 16 8 16s6.667-1.194 6.667-2.667z"/>
+                        <path d="M14.667 11.668a6.5 6.5 0 0 1-1.458.789c-1.4.56-3.242.876-5.21.876-1.966 0-3.809-.316-5.208-.876a6.5 6.5 0 0 1-1.458-.79v1.666C1.333 14.806 4.318 16 8 16s6.667-1.194 6.667-2.667z"/>   
+                        <title>{{ this.nodes[nodeId].name}}</title>
                     </svg>
                     <svg 
                         v-else 
                         class="host" 
                         xmlns="http://www.w3.org/2000/svg"
-                        :y="-config.radius * scale + 7" 
-                        :x="-config.radius * scale + 7"
-                        :width="config.radius * scale * 2 - 15" 
-                        :height="config.radius * scale * 2 - 15"  
+                        :x="-config.radius * scale"
+                        :y="-config.radius * scale"
+                        :width="config.radius * scale * 2" 
+                        :height="config.radius * scale * 2"  
                         :fill="'#ffffff'" 
-                        viewBox="0 0 16 16"
+                        viewBox="-5 -5 26 26"
+                        @mouseenter="() => {
+                            this.showText(nodeId)
+                        }"
+                        @mouseleave="() => {
+                            this.hideText(nodeId)
+                        }"
                     >
+                        <circle 
+                            cx="8" 
+                            cy="8" 
+                            r="12"
+                            :fill="config.color" 
+                            v-bind="slotProps" 
+                            :stroke-width="config.strokeWidth" 
+                            :stroke="config.strokeColor"
+                        />
                         <path d="M8 1a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1zm1 13.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0m2 0a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0M9.5 1a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zM9 3.5a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 0-1h-5a.5.5 0 0 0-.5.5M1.5 2A1.5 1.5 0 0 0 0 3.5v7A1.5 1.5 0 0 0 1.5 12H6v2h-.5a.5.5 0 0 0 0 1H7v-4H1.5a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5H7V2z"/>
+                        <title>{{ this.nodes[nodeId].name}}</title>
                     </svg>
-                    
+                    <!-- <foreignObject width="200" height="100">
+                        <body xmlns="http://www.w3.org/1999/xhtml">
+                            <div style="font-size: 20px; color: blue;">Testo HTML sopra il testo SVG!</div>
+                        </body>
+                    </foreignObject> -->
                 </template>
             </v-network-graph>
             <div ref="nodeMenu" class="context-menu">
@@ -263,18 +337,19 @@ div{
 }
 
 .context-menu {
-  width: 180px;
-  background-color: #efefef;
-  padding: 10px;
-  position: fixed;
-  visibility: hidden;
-  font-size: 12px;
-  border: 1px solid #aaa;
-  box-shadow: 2px 2px 2px #aaa;
-  > div {
-    border: 1px dashed #aaa;
-    padding: 4px;
-    margin-top: 8px;
-  }
+    color: black;
+    width: 180px;
+    background-color: #efefef;
+    padding: 10px;
+    position: fixed;
+    visibility: hidden;
+    font-size: 12px;
+    border: 1px solid #aaa;
+    box-shadow: 2px 2px 2px #aaa;
+    > div {
+        border: 1px dashed #aaa;
+        padding: 4px;
+        margin-top: 8px;
+    }
 }
 </style>
