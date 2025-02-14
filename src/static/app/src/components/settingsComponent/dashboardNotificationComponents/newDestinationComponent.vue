@@ -106,9 +106,6 @@ export default {
 						></NotificationDrodown>	
 					</div>
 				</div>
-				<!-- <div class="px-2 py-1 text-warning-emphasis bg-warning-subtle border border-warning-subtle rounded-2 d-inline-block mt-1">
-					<small><i class="bi bi-exclamation-triangle-fill me-2"></i><span v-html="this.warningText"></span></small>
-				</div> -->
 				<button class="ms-auto btn bg-success-subtle text-success-emphasis border-1 border-success-subtle rounded-3 shadow-sm"
 					:class="{disabled: this.submitting}"
 						@click="this.submitNewDestination()"

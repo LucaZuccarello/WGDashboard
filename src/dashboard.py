@@ -125,7 +125,6 @@ class DashboardLogger:
         self.__createLogDatabase()
         self.log(Message="WGDashboard started")
         DashboardNotification.notify(message="WGDashboard started", tags=["info"])
-        # notify(message="WGDashboard started")
 
     def __createLogDatabase(self):
         with self.loggerdb:
@@ -920,7 +919,6 @@ class WireguardConfiguration:
                 check = subprocess.check_output(f"wg-quick up {self.Name}",
                                                 shell=True, stderr=subprocess.STDOUT)
                 DashboardNotification.notify(message=f"Tunnel {self.Name} turned on", tags=["debug","info"])
-                # notify(message="Tunnel turned on")
             except subprocess.CalledProcessError as exc:
                 return False, str(exc.output.strip().decode("utf-8"))
         self.getStatus()
@@ -2183,6 +2181,10 @@ def index():
     """
     return render_template('index.html', APP_PREFIX=APP_PREFIX)
 
+
+
+
+
 '''
 Notification Settings API
 '''
@@ -2292,6 +2294,12 @@ def API_updateNotificationConfig():
         return ResponseObject(status=False, message=f"Something goes wrong:{str(e)}")
 
 
+
+
+
+
+
+
 def backGroundThread():
     with app.app_context():
         print(f"[WGDashboard] Background Thread #1 Started", flush=True)
@@ -2328,17 +2336,17 @@ def gunicornConfig():
 Notification System
 '''
 
-class DashboardNotification:
+class DashboardNotification:        #class used to start and managed the notification System
     def __init__(self):
         self.sendingQueue: SimpleQueue = SimpleQueue()
         self.notification: Apprise = Apprise()
-        self.urls: list[dict[str, str]] = []
+        self.urls: list[dict[str, str]] = []    # a list used to cache Destinations stored in the database
 
         self.configure()
         self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue, AppriseMessage.Message(),), name='Background', daemon=True)
         self.background_process.start()
 
-    def backgroundProcess(self, queue: SimpleQueue, message: AppriseMessage):
+    def backgroundProcess(self, queue: SimpleQueue, message: AppriseMessage):       #Process used to send message to the right channel (Tag) with Apprise
         notificationObject: Apprise = Apprise()
         try:
             while True:
@@ -2346,7 +2354,7 @@ class DashboardNotification:
                 if isinstance(item, Apprise):
                     notificationObject = item
                 elif isinstance(item, bytes):
-                    message.ParseFromString(item)  #deserializzo l'elemento all'interno della coda
+                    message.ParseFromString(item)
                     if message.tag:
                         notificationObject.notify(body=message.text, tag=message.tag)
                     else:
@@ -2354,7 +2362,7 @@ class DashboardNotification:
         except Exception as e:
             notificationObject.notify(body=str(e))
 
-    def configure(self):
+    def configure(self):        #generate a new table where store all data needed to send the app message. If already exist, load the data stored
         try:
             existingTables = sqlSelect("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
             existingTables = [t['name'] for t in existingTables]
@@ -2376,7 +2384,7 @@ class DashboardNotification:
         except Exception as e:
             print(f"[WGDashboard] Error configuring notification system: {str(e)}")
 
-    def notify(self, message: str = "", tags: list[str]=None):
+    def notify(self, message: str = "", tags: list[str]=None):      #Send messages
         if tags is None:
             tags = [""]
         try:
@@ -2390,7 +2398,7 @@ class DashboardNotification:
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
-    def add(self, name: str, destinationUrl: str, tag: str =""):
+    def add(self, name: str, destinationUrl: str, tag: str =""):        #Add New Destination
         try:
             url = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (destinationUrl,)).fetchall()
             if not url:
@@ -2402,7 +2410,7 @@ class DashboardNotification:
         except Exception as e:
             print(f"[WGDashboard] Error to add new destination: {str(e)}")
 
-    def delete(self, name: str, destinationUrl: str, tag: str):
+    def delete(self, name: str, destinationUrl: str, tag: str):         #Delete Destination
         try:
             sqlUpdate("DELETE FROM DestinationUrl WHERE url = ?", (destinationUrl,))
             self.urls.remove({"name": name, "url": destinationUrl, "tag": tag})
@@ -2414,7 +2422,7 @@ class DashboardNotification:
         except Exception as e:
             print(f"[WGDashboard] Error to delete the destination: {str(e)}")
 
-    def update(self, oldName:str, newName: str, oldDestinationUrl: str, newDestinationUrl: str, oldTag: str, newTag: str):
+    def update(self, oldName:str, newName: str, oldDestinationUrl: str, newDestinationUrl: str, oldTag: str, newTag: str):      #Update Destination
         try:
             url = sqlSelect("SELECT url FROM DestinationUrl WHERE url = ?", (oldDestinationUrl,)).fetchall()
             if url :
@@ -2429,7 +2437,7 @@ class DashboardNotification:
         except Exception as e:
             print(f"[WGDashboard] Error to update the destination: {str(e)}")
 
-    def getAll(self):
+    def getAll(self):      #Get all Destinations stored
         configs = []
         for u in self.urls:
             if u['name'] == "discord":
@@ -2458,9 +2466,6 @@ class DashboardNotification:
 
 
 DashboardNotification: DashboardNotification = DashboardNotification()
-# DashboardNotification.add(name='discord', destinationUrl='https://discord.com/api/webhooks/1331299726238416969/q_AWUXOGAzxtmPW9Mn3ruWrUjL4yYKq9y-sU8Y5Nwwm_4mahUbhfwvArBhrD4mdyaW4C', tag='error')
-# DashboardNotification.add(name='telegram',destinationUrl='tgram://7867719981:AAHcBpAcDbPI_rFsesRDpvhITkio6a_e_70/962704896', tag='info')
-# DashboardNotification.add(name='discord', destinationUrl='https://discord.com/api/webhooks/1331299819515547729/Y_SWmtFTrXkhWP4vpvAh_7Uos_jdTEWmN87hk25WNNVcJi3ICmqBPB4jnqc3gckihmo5', tag='debug')
 
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()

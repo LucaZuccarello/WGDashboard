@@ -44,11 +44,9 @@ export default {
 				value: this.value
 			}, (res) => {
 				if (res.status){
-					//this.store.Configuration.Peers[this.targetData] = this.value;
 					this.store.newMessage("Server", 
 						`Notification System is successfully ${this.value ? 'enabled':'disabled'}`, "success")
 				}else{
-					//this.value = this.store.Configuration.Peers[this.targetData];
 					this.store.newMessage("Server",
 						`Notification System is failed ${this.value ? 'enabled':'disabled'}`, "danger")
 				}

@@ -211,14 +211,6 @@ export default {
                 :layouts="this.layouts"
                 :event-handlers="this.eventHandlers"
             > 
-            <!-- <text  19/8    65/40
-                        :x="x"
-                        :y="y"
-                        :font-size="config.fontSize * scale"
-                        :text-anchor="textAnchor"
-                        :dominant-baseline="dominantBaseline"
-                        :fill="config.color"
-                    >{{ text }}</text> -->
                 <template
                     #override-node-label="{
                         nodeId, scale, text, x, y, config, textAnchor, dominantBaseline
@@ -237,7 +229,7 @@ export default {
                             :style="{
                             fontSize: config.fontSize * scale + 'px', 
                             fontFamily: config.fontFamily,
-                            textAlign: 'center',  /* Usa 'textAnchor' per l'allineamento orizzontale */
+                            textAlign: 'center',
                             color: config.color, 
                             backgroundColor: 'black',
                             padding: '5px', 
@@ -311,11 +303,6 @@ export default {
                         <path d="M8 1a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1zm1 13.5a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0m2 0a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0M9.5 1a.5.5 0 0 0 0 1h5a.5.5 0 0 0 0-1zM9 3.5a.5.5 0 0 0 .5.5h5a.5.5 0 0 0 0-1h-5a.5.5 0 0 0-.5.5M1.5 2A1.5 1.5 0 0 0 0 3.5v7A1.5 1.5 0 0 0 1.5 12H6v2h-.5a.5.5 0 0 0 0 1H7v-4H1.5a.5.5 0 0 1-.5-.5v-7a.5.5 0 0 1 .5-.5H7V2z"/>
                         <title>{{ this.nodes[nodeId].name}}</title>
                     </svg>
-                    <!-- <foreignObject width="200" height="100">
-                        <body xmlns="http://www.w3.org/1999/xhtml">
-                            <div style="font-size: 20px; color: blue;">Testo HTML sopra il testo SVG!</div>
-                        </body>
-                    </foreignObject> -->
                 </template>
             </v-network-graph>
             <div ref="nodeMenu" class="context-menu">
