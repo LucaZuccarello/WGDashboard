@@ -78,7 +78,7 @@ _installPython(){
 		ubuntu|debian)
 			{ sudo apt update ; sudo apt-get install -y python3 net-tools; printf "\n\n"; } &>> ./log/install.txt 
 		;;
-		centos|fedora|redhat|rhel|almalinux)
+		centos|fedora|redhat|rhel|almalinux|rocky)
 			if command -v dnf &> /dev/null; then
 				{ sudo dnf install -y python3 net-tools; printf "\n\n"; } >> ./log/install.txt
 			else
@@ -106,7 +106,7 @@ _installPythonVenv(){
 			ubuntu|debian)
 				{ sudo apt update ; sudo apt-get install -y python3-venv; printf "\n\n"; } &>> ./log/install.txt
 			;;
-			centos|fedora|redhat|rhel|almalinux)
+			centos|fedora|redhat|rhel|almalinux|rocky)
 				if command -v dnf &> /dev/null; then
 					{ sudo dnf install -y python3-virtualenv; printf "\n\n"; } >> ./log/install.txt
 				else
@@ -150,7 +150,7 @@ _installPythonPip(){
 					{ sudo apt update ; sudo apt-get install -y ${pythonExecutable}-distutil python3-pip; printf "\n\n"; } &>> ./log/install.txt
 				fi
 			;;
-			centos|fedora|redhat|rhel|almalinux)
+			centos|fedora|redhat|rhel|almalinux|rocky)
 				if [ "$pythonExecutable" = "python3" ]; then
 					{ sudo dnf install -y python3-pip; printf "\n\n"; } >> ./log/install.txt
 				else
@@ -188,7 +188,7 @@ _checkWireguard(){
                     printf "\n[WGDashboard] WireGuard installed on %s.\n\n" "$OS"; 
                 } &>> ./log/install.txt
             ;;
-            centos|fedora|redhat|rhel|almalinux)
+            centos|fedora|redhat|rhel|almalinux|rocky)
                 { 
                     sudo dnf install -y wireguard-tools;
                     printf "\n[WGDashboard] WireGuard installed on %s.\n\n" "$OS"; 
@@ -241,6 +241,12 @@ _checkPythonVersion(){
 
 install_wgd(){
     printf "[WGDashboard] Starting to install WGDashboard\n"
+    
+    if [ ! -d "/etc/wireguard/WGDashboard_Backup" ]
+    	then
+    		printf "[WGDashboard] Creating /etc/wireguard/WGDashboard_Backup folder\n"
+            sudo mkdir "/etc/wireguard/WGDashboard_Backup"
+    fi
     
     if [ ! -d "log" ]
 	  then 
@@ -341,6 +347,14 @@ stop_wgd() {
 	fi
 }
 
+# ============= Docker Functions =============
+startwgd_docker() {
+	_checkWireguard
+	printf "[WGDashboard][Docker] WireGuard configuration started\n"
+	{ date; start_core ; printf "\n\n"; } >> ./log/install.txt
+    gunicorn_start
+}
+
 start_core() {
 	# Re-assign config_files to ensure it includes any newly created configurations
 	local config_files=$(find /etc/wireguard -type f -name "*.conf")
@@ -355,6 +369,24 @@ start_core() {
 		wg-quick up "$config_name"
 	done
 }
+
+newconf_wgd() {
+    local wg_port_listen=$wg_port
+    local wg_addr_range=$wg_net
+    private_key=$(wg genkey)
+    public_key=$(echo "$private_key" | wg pubkey)
+    cat <<EOF >"/etc/wireguard/wg0.conf"
+[Interface]
+PrivateKey = $private_key
+Address = $wg_addr_range
+ListenPort = $wg_port_listen
+SaveConfig = true
+PostUp = /opt/wireguarddashboard/src/iptable-rules/postup.sh
+PreDown = /opt/wireguarddashboard/src/iptable-rules/postdown.sh
+EOF
+}
+
+# ============= Docker Functions =============
 
 start_wgd_debug() {
 	printf "%s\n" "$dashes"
@@ -380,20 +412,29 @@ update_wgd() {
 	
 	new_ver=$($venv_python -c "import json; import urllib.request; data = urllib.request.urlopen('https://api.github.com/repos/donaldzou/WGDashboard/releases/latest').read(); output = json.loads(data);print(output['tag_name'])")
 	printf "%s\n" "$dashes"
-	printf "[WGDashboard] Are you sure you want to update to the %s? (Y/N): " "$new_ver"
-	read up
+
+	if [ "$commandConfirmed" = "true" ]; then
+		printf "[WGDashboard] Confirmation granted.\n"
+		up="Y"
+	else
+		printf "[WGDashboard] Are you sure you want to update to the %s? (Y/N): " "$new_ver"
+		read up
+	fi
+
 	if [ "$up" = "Y" ] || [ "$up" = "y" ]; then
 		printf "[WGDashboard] Shutting down WGDashboard\n"
+
 		if check_wgd_status; then
 			stop_wgd
 		fi
-		mv wgd.sh wgd.sh.old
-		printf "[WGDashboard] Downloading %s from GitHub..." "$new_ver"
-		{ date; git stash; git pull https://github.com/donaldzou/WGDashboard.git $new_ver --force; } >> ./log/update.txt
-		chmod +x ./wgd.sh
-		sudo ./wgd.sh install
-		printf "[WGDashboard] Update completed!\n"
-		printf "%s\n" "$dashes"
+
+		mv wgd.sh wgd.sh.old && \
+		printf "[WGDashboard] Downloading %s from GitHub..." "$new_ver" && \
+		{ date; git stash; git pull https://github.com/donaldzou/WGDashboard.git $new_ver --force; } >> ./log/update.txt && \
+		chmod +x ./wgd.sh && \
+		sudo ./wgd.sh install && \
+		printf "[WGDashboard] Update completed!\n" && \
+		printf "%s\n" "$dashes"; \
 		rm wgd.sh.old
 	else
 		printf "%s\n" "$dashes"
@@ -402,52 +443,55 @@ update_wgd() {
 	fi
 }
 
-if [ "$#" != 1 ];
-  then
-    help
-  else
-    if [ "$1" = "start" ]; then
-        if check_wgd_status; then
-          printf "%s\n" "$dashes"
-          printf "[WGDashboard] WGDashboard is already running.\n"
-          printf "%s\n" "$dashes"
-        else
-            start_wgd
-        fi
-      elif [ "$1" = "stop" ]; then
-        if check_wgd_status; then
-            printf "%s\n" "$dashes"
-            stop_wgd
-            printf "[WGDashboard] WGDashboard is stopped.\n"
-            printf "%s\n" "$dashes"
-            else
-              printf "%s\n" "$dashes"
-              printf "[WGDashboard] WGDashboard is not running.\n"
-              printf "%s\n" "$dashes"
-        fi
-      elif [ "$1" = "update" ]; then
-        update_wgd
-      elif [ "$1" = "install" ]; then
-        printf "%s\n" "$dashes"
-        install_wgd
-        printf "%s\n" "$dashes"
-      elif [ "$1" = "restart" ]; then
-         if check_wgd_status; then
-           printf "%s\n" "$dashes"
-           stop_wgd
-           printf "| WGDashboard is stopped.                                  |\n"
-           sleep 4
-           start_wgd
-        else
-          start_wgd
-        fi
-      elif [ "$1" = "debug" ]; then
-        if check_wgd_status; then
-          printf "| WGDashboard is already running.                          |\n"
-          else
-            start_wgd_debug
-        fi
-      else
-        help
-    fi
+if [ "$#" -lt 1 ]; then
+	help
+else
+	if [ "$2" = "-y" ] || [ "$2" = "-Y" ]; then
+		commandConfirmed="true"
+	fi
+
+	if [ "$1" = "start" ]; then
+		if check_wgd_status; then
+		printf "%s\n" "$dashes"
+		printf "[WGDashboard] WGDashboard is already running.\n"
+		printf "%s\n" "$dashes"
+		else
+			start_wgd
+		fi
+	elif [ "$1" = "stop" ]; then
+		if check_wgd_status; then
+			printf "%s\n" "$dashes"
+			stop_wgd
+			printf "[WGDashboard] WGDashboard is stopped.\n"
+			printf "%s\n" "$dashes"
+			else
+			printf "%s\n" "$dashes"
+			printf "[WGDashboard] WGDashboard is not running.\n"
+			printf "%s\n" "$dashes"
+		fi
+	elif [ "$1" = "update" ]; then
+		update_wgd
+	elif [ "$1" = "install" ]; then
+		printf "%s\n" "$dashes"
+		install_wgd
+		printf "%s\n" "$dashes"
+	elif [ "$1" = "restart" ]; then
+		if check_wgd_status; then
+		printf "%s\n" "$dashes"
+		stop_wgd
+		printf "| WGDashboard is stopped.                                  |\n"
+		sleep 4
+		start_wgd
+		else
+		start_wgd
+		fi
+	elif [ "$1" = "debug" ]; then
+		if check_wgd_status; then
+		printf "| WGDashboard is already running.                          |\n"
+		else
+			start_wgd_debug
+		fi
+	else
+		help
+	fi
 fi

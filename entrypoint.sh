@@ -1,112 +1,110 @@
 #!/bin/bash
 
+# Path to the configuration file (exists because of previous function).
+config_file="/data/wg-dashboard.ini"
+
 echo "------------------------- START ----------------------------"
 echo "Starting the WireGuard Dashboard Docker container."
 
 ensure_installation() {
   # When using a custom directory to store the files, this part moves over and makes sure the installation continues.
-  echo "Checking if everything is present."
+  echo "Quick-installing..."
 
-  if [ -z "$(ls -A "${WGDASH}")" ]; then
-    echo "Detected empty directory, moving over..."
-
-    mv /setup/app/* "${WGDASH}"
-    #mv /setup/app/.* "${WGDASH}"
-
-    python3 -m venv "${WGDASH}"/src/venv
-    . "${WGDASH}/src/venv/bin/activate"
-
-    # Extra step for Alpine
-    mv  /usr/lib/python3.12/site-packages/psutil* "${WGDASH}"/src/venv/lib/python3.12/site-packages
-    mv  /usr/lib/python3.12/site-packages/bcrypt* "${WGDASH}"/src/venv/lib/python3.12/site-packages
-
-    chmod +x "${WGDASH}"/src/wgd.sh
-    cd "${WGDASH}"/src || exit
-    ./wgd.sh install
-
-    echo "Looks like the installation succesfully moved over."
-  else
-    echo "Looks like everything is present. Or the directory is not empty."
+  if [ ! -d "/data/db" ]; then
+    echo "Creating database dir"
+    mkdir /data/db
   fi
 
+  if [ ! -d "${WGDASH}/src/db" ]; then
+    ln -s /data/db "${WGDASH}/src/db"
+  fi
+  
+  if [ ! -f "${config_file}" ]; then
+    echo "Creating wg-dashboard.ini file"
+    touch "${config_file}"
+  fi
+
+  if [ ! -f "${WGDASH}/src/wg-dashboard.ini" ]; then
+    ln -s "${config_file}" "${WGDASH}/src/wg-dashboard.ini"
+  fi
+
+  python3 -m venv "${WGDASH}"/src/venv
+  . "${WGDASH}/src/venv/bin/activate"
+
+  echo "Moving PIP dependency from ephemerality to runtime environment: psutil"
+  mv /usr/lib/python3.12/site-packages/psutil* "${WGDASH}"/src/venv/lib/python3.12/site-packages
+  
+  echo "Moving PIP dependency from ephemerality to runtime environment: bcrypt"
+  mv /usr/lib/python3.12/site-packages/bcrypt* "${WGDASH}"/src/venv/lib/python3.12/site-packages
+
+
+  chmod +x "${WGDASH}"/src/wgd.sh
+  cd "${WGDASH}"/src || exit
+  ./wgd.sh install
+
+  echo "Looks like the installation succeeded. Moving on."
+
   # This first step is to ensure the wg0.conf file exists, and if not, then its copied over from the ephemeral container storage.
+  # This is done so WGDashboard it works out of the box
+
   if [ ! -f "/etc/wireguard/wg0.conf" ]; then
     echo "Standard wg0 Configuration file not found, grabbing template."
-    cp -a "/setup/conf/wg0.conf" "/etc/wireguard/wg0.conf"
+    cp -a "/configs/wg0.conf.template" "/etc/wireguard/wg0.conf"
 
-    echo "Setting a secure private key."
+    echo "Setting a secure private key." # SORRY 4 BE4 - Daan
 
     local privateKey
     privateKey=$(wg genkey)
-
-    sed -i "s|^PrivateKey =$|PrivateKey = ${privateKey}|g" /etc/wireguard/wg0.conf
     sed -i "s|^PrivateKey *=.*$|PrivateKey = ${privateKey}|g" /etc/wireguard/wg0.conf
+
     echo "Done setting template."
   else
     echo "Existing wg0 configuration file found, using that."
   fi
 }
 
-# === CLEAN UP ===
-clean_up() {
-  printf "\n------------------------ CLEAN UP --------------------------\n"
-
-  # Cleaning out previous data such as the .pid file and starting the WireGuard Dashboard. Making sure to use the python venv.
-  echo "Looking for remains of previous instances..."
-  local pid_file="${WGDASH}/src/gunicorn.pid"
-  if [ -f "$pid_file" ]; then
-    echo "Found old pid file, removing."
-    rm $pid_file
-  else
-    echo "No pid remains found, continuing."
-  fi
-
-  # Also check for Python caches (pycache) inspired by https://github.com/shuricksumy
-  local pycache="${WGDASH}/src/__pycache__"
-  if [ -d "$pycache" ]; then
-    local pycache_filecount=$(find "$pycache" -maxdepth 1 -type f | wc -l)
-    if [ "$pycache_filecount" -gt 0 ]; then
-      echo "Found old pycaches, removing."
-      rm -rf "$pycache"/*
-    else
-      echo "No pycaches found, continuing."
-    fi
-  else
-    echo "No pycaches found, continuing."
-  fi
-
-  local logdir="${WGDASH}/src/log"
-  echo "Cleaning log directory."
-  find /opt/wireguarddashboard/src/log -name 'access_*.log' -exec rm {} +
-  find /opt/wireguarddashboard/src/log -name 'error_*.log' -exec rm {} +
-  echo "Removed unneeded logs!"
-}
-
-# === SET ENV VARS ===
 set_envvars() {
-  #printf "\n------------- SETTING ENVIRONMENT VARIABLES ----------------\n"
+  printf "\n------------- SETTING ENVIRONMENT VARIABLES ----------------\n"
 
-  # Changing the DNS used for clients and the dashboard itself.
-  if [ "${global_dns}" != "$(grep "peer_global_dns = " /opt/wireguarddashboard/src/wg-dashboard.ini | awk '{print $NF}')" ]; then 
-    echo "Changing default dns."
+  # Check if the file is empty
+  if [ ! -s "${config_file}" ]; then
+    echo "Config file is empty. Creating [Peers] section."
+    
+    # Create [Peers] section with initial values
+    {
+      echo "[Peers]"
+      echo "peer_global_dns = ${global_dns}"
+      echo "remote_endpoint = ${public_ip}"
+      #echo -e "\n[Server]"
+    } > "${config_file}"
 
-    #sed -i "s/^DNS = .*/DNS = ${global_dns}/" /etc/wireguard/wg0.conf # Uncomment if you want to have DNS on server-level.
-    sed -i "s/^peer_global_dns = .*/peer_global_dns = ${global_dns}/" /opt/wireguarddashboard/src/wg-dashboard.ini
   else
-    echo "DNS is set correctly."
+    echo "Config file is not empty, using pre-existing."
   fi
 
-  # Setting the public IP of the WireGuard Dashboard container host. If not defined, it will trying fetching it using a curl to ifconfig.me.
-  if [ "${public_ip}" = "0.0.0.0" ]; then
+  echo "Verifying current variables..."
+
+  # Check and update the DNS if it has changed
+  current_dns=$(grep "peer_global_dns = " "${config_file}" | awk '{print $NF}')
+  if [ "${global_dns}" == "$current_dns" ]; then
+    echo "DNS is correct, moving on."
+    
+  else
+    echo "Changing default DNS..."
+    sed -i "s/^peer_global_dns = .*/peer_global_dns = ${global_dns}/" "${config_file}"
+  fi
+
+  if [ "${public_ip}" == "0.0.0.0" ]; then
+
     default_ip=$(curl -s ifconfig.me)
+
     echo "Trying to fetch the Public-IP using ifconfig.me: ${default_ip}"
+    sed -i "s/^remote_endpoint = .*/remote_endpoint = ${default_ip}/" "${config_file}"
 
-    sed -i "s/^remote_endpoint = .*/remote_endpoint = ${default_ip}/" /opt/wireguarddashboard/src/wg-dashboard.ini
-  elif [ "${public_ip}" != "$(grep "remote_endpoint = " /opt/wireguarddashboard/src/wg-dashboard.ini | awk '{print $NF}')" ]; then
-    echo "Setting the Public-IP using given variable: ${public_ip}"
-
-    sed -i "s/^remote_endpoint = .*/remote_endpoint = ${public_ip}/" /opt/wireguarddashboard/src/wg-dashboard.ini
+  else
+    echo "Public-IP is correct, moving on."
   fi
+
 }
 
 # === CORE SERVICES ===
@@ -114,113 +112,124 @@ start_core() {
   printf "\n---------------------- STARTING CORE -----------------------\n"
 
   echo "Activating Python venv and executing the WireGuard Dashboard service."
+
   . "${WGDASH}"/src/venv/bin/activate
   cd "${WGDASH}"/src || return
-  bash wgd.sh start &>> /dev/null
+  bash wgd.sh start
 
   # Isolated peers feature, first converting the existing configuration files and the given names to arrays.
+  #
+  # WILL BE REMOVED IN FUTURE WHEN WGDASHBOARD ITSELF SUPPORTS THIS!!
+  #
+
   local configurations=(/etc/wireguard/*)
   IFS=',' read -r -a do_isolate <<< "${isolate}"
   non_isolate=()
 
   # Checking if there are matches between the two arrays.
   for config in "${configurations[@]}"; do
-    local config=$(echo "$config" | sed -e 's|.*/etc/wireguard/||' -e 's|\.conf$||')
+    config=$(echo "$config" | sed -e 's|.*/etc/wireguard/||' -e 's|\.conf$||')
+
+    local found
     found=false
+
     for interface in "${do_isolate[@]}"; do
+
       if [[ "$config" == "$interface" ]]; then
         found=true
         break
       fi
+
     done
+
     if [ "$found" = false ]; then
       non_isolate+=("$config")
     fi
+
   done
 
   # Isolating the matches.
+  noneFound=0
+
   for interface in "${do_isolate[@]}"; do
-    if [ "$interface" = "none" ]; then
-      echo "Found: $interface, stopping isolation checking."
+
+    if [ "$interface" = "none" ] || [ "$interface" = "" ]; then
+      echo "Found none, stopping isolation checking."
+      noneFound=1
       break
+
     else
-      if [ -f "/etc/wireguard/${interface}.conf" ]; then
-        echo "Isolating interface:" $interface
-        upblocking=$(grep -c "PostUp = iptables -I FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/${interface}.conf)
-        downblocking=$(grep -c "PreDown = iptables -D FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/${interface}.conf)
+
+      if [ ! -f "/etc/wireguard/${interface}.conf" ]; then
+        echo "Ignoring ${interface}"
+
+      elif [ -f "/etc/wireguard/${interface}.conf" ]; then
+
+
+        echo "Isolating interface:" "$interface"
+
+        upblocking=$(grep -c "PostUp = iptables -I FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/"${interface}".conf)
+        downblocking=$(grep -c "PreDown = iptables -D FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/"${interface}".conf)
 
         if [ "$upblocking" -lt 1 ] && [ "$downblocking" -lt 1 ]; then
-          sed -i "/PostUp =/a PostUp = iptables -I FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/${interface}.conf
-          sed -i "/PreDown =/a PreDown = iptables -D FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/${interface}.conf
+          sed -i "/PostUp =/a PostUp = iptables -I FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/"${interface}".conf
+          sed -i "/PreDown =/a PreDown = iptables -D FORWARD -i ${interface} -o ${interface} -j DROP" /etc/wireguard/"${interface}".conf
         fi
+
       else
-        echo "Configuration for $interface does not seem to exist, continuing."
+        echo "Configuration for $interface in enforce isolation does not seem to exist, continuing."
       fi
+
     fi
+
   done
   
   # Removing isolation for the configurations that did not match.
+
+
   for interface in "${non_isolate[@]}"; do
-    if [ -f "/etc/wireguard/${interface}.conf" ]; then
-      echo "Removing Isolation if present for:" $interface
-      sed -i "/PostUp = iptables -I FORWARD -i ${interface} -o ${interface} -j DROP/d" /etc/wireguard/${interface}.conf
-      sed -i "/PreDown = iptables -D FORWARD -i ${interface} -o ${interface} -j DROP/d" /etc/wireguard/${interface}.conf
-    else
-      echo "Configuration for $interface does not seem to exist, continuing."
-    fi
-  done
-
-  # The following section takes care of enabling wireguard interfaces on startup. Using arrays and given arguments.
-  IFS=',' read -r -a enable_array <<< "${enable}"
-
-  for interface in "${enable_array[@]}"; do
-    if [ "$interface" = "none" ]; then
-      echo "Found: $interface, stopping enabling checking."
+    if [ $noneFound -eq 1 ]; then
       break
-    else
-      echo "Enabling interface:" $interface
-      
-      local fileperms=$(stat -c "%a" /etc/wireguard/${interface}.conf)
-      if [ $fileperms -eq 644 ]; then
-        echo "Configuration is world accessible, adjusting."
-        chmod 600 "/etc/wireguard/${interface}.conf"    
-      fi
 
-      if [ -f "/etc/wireguard/${interface}.conf" ]; then
-        wg-quick up $interface
-      else
-        echo "No corresponding configuration file found for $interface doing nothing."
-      fi
+    elif [ ! -f "/etc/wireguard/${interface}.conf" ]; then
+      echo "Ignoring ${interface}"
+
+    elif [ -f "/etc/wireguard/${interface}.conf" ]; then
+      echo "Removing isolation, if isolation is present for:" "$interface"
+
+      sed -i "/PostUp = iptables -I FORWARD -i ${interface} -o ${interface} -j DROP/d" /etc/wireguard/"${interface}".conf
+      sed -i "/PreDown = iptables -D FORWARD -i ${interface} -o ${interface} -j DROP/d" /etc/wireguard/"${interface}".conf
+    else
+      echo "Configuration for $interface in removing isolation does not seem to exist, continuing."
     fi
+
   done
+
 }
 
-# === CLEAN UP ===
 ensure_blocking() {
-  #printf "\n-------------- ENSURING CONTAINER CONTINUATION -------------\n"
-
-  . "${WGDASH}"/src/venv/bin/activate
-  cd "${WGDASH}"/src || return
-  bash wgd.sh restart
-
   sleep 1s
-  echo "Ensuring container continuation."
+  echo -e "\nEnsuring container continuation."
 
-  # This function checks if the latest error log is created and tails it for docker logs uses.
-  if find "/opt/wireguarddashboard/src/log" -mindepth 1 -maxdepth 1 -type f | read -r; then
-    latestErrLog=$(find /opt/wireguarddashboard/src/log -name "error_*.log" | head -n 1)
-    latestAccLog=$(find /opt/wireguarddashboard/src/log -name "access_*.log" | head -n 1)
+  # Find and tail the latest error and access logs if they exist
+  local logdir="/opt/wireguarddashboard/src/log"
+  
+  latestErrLog=$(find "$logdir" -name "error_*.log" -type f -print | sort -r | head -n 1)
+  latestAccLog=$(find "$logdir" -name "access_*.log" -type f -print | sort -r | head -n 1)
 
-    tail -f "${latestErrLog}" "${latestAccLog}"
+  # Only tail the logs if they are found
+  if [ -n "$latestErrLog" ] || [ -n "$latestAccLog" ]; then
+    tail -f "$latestErrLog" "$latestAccLog"
+  else
+    echo "No log files found to tail."
   fi
 
-  # Blocking command in case of erroring. So the container does not quit.
+  # Blocking command to keep the container running as a last resort.
   sleep infinity
 }
 
 # Execute functions for the WireGuard Dashboard services, then set the environment variables
 ensure_installation
-clean_up
-start_core
 set_envvars
+start_core
 ensure_blocking
