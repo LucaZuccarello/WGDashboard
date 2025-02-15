@@ -7,6 +7,7 @@ import {fetchGet} from "@/utilities/fetch.js";
 // import Settings from "@/views/settings.vue";
 import {WireguardConfigurationsStore} from "@/stores/WireguardConfigurationsStore.js";
 import {DashboardConfigurationStore} from "@/stores/DashboardConfigurationStore.js";
+import NetTopology from '@/views/netTopology.vue';
 // import Setup from "@/views/setup.vue";
 // import NewConfiguration from "@/views/newConfiguration.vue";
 // import Configuration from "@/views/configuration.vue";
@@ -103,6 +104,11 @@ const router = createRouter({
 							name: "Peers Create",
 							path: 'create',
 							component: () => import('@/components/configurationComponents/peerCreate.vue')
+						},
+						{
+							name: "Net Topology",
+							path: 'net',
+							component: NetTopology
 						},
 					]
 				},

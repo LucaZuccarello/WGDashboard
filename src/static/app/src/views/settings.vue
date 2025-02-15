@@ -171,6 +171,7 @@ export default {
 								</div>
 							</div>
 							<DashboardAPIKeys></DashboardAPIKeys>
+							<DashboardNotificationSetup></DashboardNotificationSetup>
 						</div>
 					</Transition>
 
