@@ -23,6 +23,8 @@ export default {
 			newDestination: false,
 			updateDestination: false,
 			destinationsConfigs: [],
+			timers: ["None","Every 30 minutes", "Every hour", "Every 3 hours", "Every day", "Every 3 days", "Every week", "Every mouth"],
+			currentSelection : "None"
 		}
 	},
 	methods: {
@@ -58,6 +60,10 @@ export default {
 			this.oldDestinationData.service.dataRequired[0].value = data.Id
 			this.oldDestinationData.service.dataRequired[1].value = data.Token
 			this.updateDestination = true
+		},
+
+		newTimer(x){
+			this.currentSelection = x
 		}
 	},
 	async mounted(){
@@ -70,10 +76,23 @@ export default {
 	<div class="accordion" id="NotificationAccordion" >
 		<div class="card mb-4 shadow rounded-3">
 			<div class="card-header d-flex">
-				<div class="accordion-header" style="width: 85%;">
+				<div class="accordion-header" style="width: 75%;">
 					<button class="accordion-button collapsed rounded-3" type="button" data-bs-toggle="collapse" data-bs-target="#NotificationAccordionCollapse">
 						Notification Settings
 					</button>
+				</div>
+				<div class="dropdown" style="margin: auto;">
+					<button type="button" class="btn btn-primary dropdown-toggle" data-bs-toggle="dropdown" aria-expanded="false">
+						Report Timer
+					</button>
+					<ul class="dropdown-menu rounded-3 shadow" style="font-size: 0.875rem; width: 200px">
+						<li v-for="x in this.timers">
+							<a class="dropdown-item d-flex align-items-center" role="button" @click="this.newTimer(x)">
+								<samp>{{x}}</samp>
+								<i class="bi bi-check ms-auto" v-if="x === this.currentSelection"></i>
+							</a>
+						</li>
+					</ul>	
 				</div>
 				<h5 class="form-check form-switch align-items-center ms-auto" style="margin: auto;">
 					<input class="form-check-input" type="checkbox"

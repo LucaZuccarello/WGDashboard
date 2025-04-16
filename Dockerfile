@@ -15,7 +15,7 @@ ENV public_ip="0.0.0.0"
 RUN apk update \
   && apk add --no-cache bash git tzdata \
   iptables ip6tables openrc curl wireguard-tools \
-  sudo py3-psutil py3-bcrypt \
+  sudo py3-psutil py3-bcrypt nodejs npm \
   && apk upgrade
 
 # Using WGDASH -- like wg_net functionally as a ARG command. But it is needed in entrypoint.sh so it needs to be exported as environment variable.
@@ -51,7 +51,9 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
 
 # Copy the basic entrypoint.sh script.
 COPY entrypoint.sh /entrypoint.sh
+COPY npm_setup.sh /npm_setup.sh
 
+RUN bash -c "chmod +x /npm_setup.sh && /npm_setup.sh > /dev/null"
 # Exposing the default WireGuard Dashboard port for web access.
 EXPOSE 10086
 

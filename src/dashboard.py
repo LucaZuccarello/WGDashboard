@@ -1,3 +1,4 @@
+import asyncio
 import itertools, random
 import shutil
 import sqlite3
@@ -19,11 +20,16 @@ import bcrypt
 import ifcfg
 import psutil
 import pyotp
+
+import aio_pika
+from apscheduler.schedulers.background import BackgroundScheduler
+from apscheduler.executors.pool import ProcessPoolExecutor
+from apscheduler.triggers.interval import IntervalTrigger
 from flask import Flask, request, render_template, session, g
 from json import JSONEncoder
 from flask_cors import CORS
 from icmplib import ping, traceroute
-from apprise import Apprise
+from apprise import Apprise, AppriseAttachment
 import messages_pb2 as AppriseMessage
 
 # Import other python files
@@ -1377,7 +1383,7 @@ class DashboardConfig:
                 "dashboard_theme": "dark",
                 "dashboard_api_key": "false",
                 "dashboard_language": "en",
-                "dashboard_notification": "false"                       #is for turn the notification system on/off
+                "dashboard_notification": "true"                       #it's for turn the notification system on/off
             },
             "Peers": {
                 "peer_global_DNS": "1.1.1.1",
@@ -2745,28 +2751,57 @@ Notification System
 class DashboardNotification:        #class used to start and managed the notification System
     def __init__(self):
         self.sendingQueue: SimpleQueue = SimpleQueue()
+        self.storingQueue: SimpleQueue = SimpleQueue()
         self.notification: Apprise = Apprise()
         self.urls: list[dict[str, str]] = []    # a list used to cache Destinations stored in the database
 
         self.configure()
-        self.background_process = Process(target=self.backgroundProcess, args=(self.sendingQueue, AppriseMessage.Message(),), name='Background', daemon=True)
-        self.background_process.start()
+        self.background_sending_process = Process(target=self.backgroundSendingProcess, args=(self.sendingQueue,), name='BackgroundSendingProcess', daemon=True)
+        self.background_storing_process = Process(target=self.backgroundStoringProcess, args=(self.connect_to_rabbitMQ, self.storingQueue), daemon=True)
+        self.background_storing_process.start()
+        self.background_sending_process.start()
 
-    def backgroundProcess(self, queue: SimpleQueue, message: AppriseMessage):       #Process used to send message to the right channel (Tag) with Apprise
+
+    @staticmethod
+    def backgroundSendingProcess(sendingQueue: SimpleQueue):       #Process used to send message to the right channel (Tag) with Apprise
         notificationObject: Apprise = Apprise()
+        message: AppriseMessage = AppriseMessage.Message()
         try:
             while True:
-                item = queue.get()
+                item = sendingQueue.get()
                 if isinstance(item, Apprise):
                     notificationObject = item
                 elif isinstance(item, bytes):
                     message.ParseFromString(item)
                     if message.tag:
-                        notificationObject.notify(body=message.text, tag=message.tag)
+                        notificationObject.notify(title=str(message.tag).upper(), body=f"{message.date}\n\n{message.text}", tag=message.tag)
                     else:
-                        notificationObject.notify(body=message.text)
+                        notificationObject.notify(body=f"{message.date}\n\n{message.text}")
         except Exception as e:
-            notificationObject.notify(body=str(e))
+            print(f"Something in the Sending Process goes wrong: {str(e)}")
+
+    @staticmethod
+    def backgroundStoringProcess(method, storing_queue: SimpleQueue):       #Process used to send message to the right channel (Tag) with Apprise
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(method(storing_queue))
+        except Exception as e:
+                print(f"Something in the Storing Process goes wrong: {str(e)}")
+        finally:
+            loop.close()
+
+    @staticmethod
+    def backgroundReportProcess(method,
+                                 notificationObject: Apprise):  # Process used to send message to the right channel (Tag) with Apprise
+        loop = asyncio.new_event_loop()
+        try:
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(method(notificationObject))
+        except Exception as e:
+            print(f"Something in the Report Process goes wrong: {str(e)}")
+        finally:
+            loop.close()
 
     def configure(self):        #generate a new table where store all data needed to send the app message. If already exist, load the data stored
         try:
@@ -2790,17 +2825,49 @@ class DashboardNotification:        #class used to start and managed the notific
         except Exception as e:
             print(f"[WGDashboard] Error configuring notification system: {str(e)}")
 
+    @staticmethod
+    async def connect_to_rabbitMQ(storing_queue: SimpleQueue):
+        try:
+            connection = await aio_pika.connect_robust(host='rabbitmq', port=5672, login='user', password='password', heartbeat=60)
+            async with connection :
+                channel = await connection.channel()
+                rabbitQueue = await channel.declare_queue(name="storage", durable=True)
+                while True:
+                    item = await asyncio.to_thread(storing_queue.get)
+                    try:
+                        newMessage = aio_pika.Message(body=item, delivery_mode=aio_pika.DeliveryMode.PERSISTENT)
+                        await channel.default_exchange.publish(
+                            newMessage,
+                            routing_key=rabbitQueue.name
+                        )
+                    except aio_pika.exceptions.ChannelClosed or aio_pika.exceptions.ConnectionClosed or aio_pika.exceptions.DeliveryError or aio_pika.exceptions.MessageProcessError as e:
+                        channel = await connection.channel()
+                        rabbitQueue = await channel.declare_queue(name="storage", durable=True)
+                        newMessage = aio_pika.Message(body=item, delivery_mode=aio_pika.DeliveryMode.PERSISTENT)
+                        await channel.default_exchange.publish(
+                            newMessage,
+                            routing_key=rabbitQueue.name
+                        )
+
+        except Exception as e :
+            print(f"Connection with RabbitMQ failed for this reason: {str(e)}\n\nPlease restart the application or RabbitMQ container")
+
+
     def notify(self, message: str = "", tags: list[str]=None):      #Send messages
         if tags is None:
             tags = [""]
         try:
             result, value=DashboardConfig.GetConfig(section="Server", key="dashboard_notification")
             if result and value:
+                now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 for tag in tags :
                     newMessage = AppriseMessage.Message()
+                    newMessage.date = now
                     newMessage.text = message
                     newMessage.tag = tag
-                    self.sendingQueue.put(newMessage.SerializeToString())  #Serializzo il messaggio e lo metto nella coda
+                    newMessage = newMessage.SerializeToString()
+                    self.sendingQueue.put(newMessage)  #Serializzo il messaggio e lo metto nella coda di invio
+                    self.storingQueue.put(newMessage)
         except Exception as e:
             print(f"[WGDashboard] Error requesting to send the notification: {str(e)}")
 
@@ -2843,6 +2910,68 @@ class DashboardNotification:        #class used to start and managed the notific
         except Exception as e:
             print(f"[WGDashboard] Error to update the destination: {str(e)}")
 
+    @staticmethod
+    async def report(notification: Apprise):
+        try:
+            message = AppriseMessage.Message()
+            connection = await aio_pika.connect_robust(host='rabbitmq', port=5672, login='user', password='password',
+                                                       heartbeat=60)
+            async with connection:
+                channel = await connection.channel()
+                rabbitQueue = await channel.declare_queue(name="storage", durable=True)
+                queueSize = rabbitQueue.declaration_result.message_count
+                with open('info_report.txt', 'w') as info, open('error_report.txt', 'w') as error, open(
+                        'debug_report.txt', 'w') as debug:
+                    info.write("*********************** INFO HISTORY REPORT ***********************\n\n")
+                    error.write("*********************** ERROR HISTORY REPORT ***********************\n\n")
+                    debug.write("*********************** DEBUG HISTORY REPORT ***********************\n\n")
+                    while queueSize > 0 :
+                        try:
+                            Item = await rabbitQueue.get()
+                            async with Item.process():
+                                message.ParseFromString(Item.body)
+                                if message.tag == 'info':
+                                    info.write(
+                                        f"------------------------------------------------------------------------------\n")
+                                    info.write(f"{message.date}     {message.text}\n")
+
+                                elif message.tag == 'error':
+                                    error.write(
+                                        f"------------------------------------------------------------------------------\n")
+                                    error.write(f"{message.date}     {message.text}\n")
+
+                                else:
+                                    debug.write(
+                                        f"------------------------------------------------------------------------------\n")
+                                    debug.write(f"{message.date}     {message.text}\n")
+
+                            queueSize = queueSize - 1
+
+                        except aio_pika.exceptions.ChannelClosed or aio_pika.exceptions.ConnectionClosed or aio_pika.exceptions.DeliveryError or aio_pika.exceptions.MessageProcessError as e:
+                            channel = await connection.channel()
+                            rabbitQueue = await channel.declare_queue(name="storage", durable=True)
+
+                notification.notify(title='HISTORY REPORT',
+                                         attach=AppriseAttachment(paths=['info_report.txt']),
+                                         body="In this file you can find the message previously sent on this channel",
+                                         tag='info')
+                notification.notify(title='HISTORY REPORT',
+                                         attach=AppriseAttachment(paths=['error_report.txt']),
+                                         body="In this file you can find the message previously sent on this channel",
+                                         tag='error')
+                notification.notify(title='HISTORY REPORT',
+                                         attach=AppriseAttachment(paths=['debug_report.txt']),
+                                         body="In this file you can find the message previously sent on this channel",
+                                         tag='debug')
+
+                os.remove('info_report.txt')
+                os.remove('error_report.txt')
+                os.remove('debug_report.txt')
+                await channel.close()
+
+        except Exception as e :
+            print(f"Report mechanism failed for this reason: {str(e)}\n\nPlease restart the application or RabbitMQ container")
+
     def getAll(self):      #Get all Destinations stored
         configs = []
         for u in self.urls:
@@ -2872,7 +3001,20 @@ class DashboardNotification:        #class used to start and managed the notific
 
 
 DashboardNotification: DashboardNotification = DashboardNotification()
+DashboardNotification.add(name='discord',destinationUrl='https://discord.com/api/webhooks/1356680456850112672/53-bKPfu0fSzd7_ejDOvtlaCO_7N4dDBjhLqigDCSrqLWi6MQYrSLOidl6m15WCZjyFI', tag='debug')
+DashboardNotification.add(name='discord',destinationUrl='https://discord.com/api/webhooks/1356680255271862422/9NWWm0TPmOI-Hx6mAydJRd3vdrUmSqThjEELLSgocWzaus2ocx_8QfEIQ-6DVbgMmm81', tag='info')
+DashboardNotification.add(name='discord',destinationUrl='https://discord.com/api/webhooks/1331299726238416969/q_AWUXOGAzxtmPW9Mn3ruWrUjL4yYKq9y-sU8Y5Nwwm_4mahUbhfwvArBhrD4mdyaW4C', tag='error')
+testProcess: Process = Process(target=DashboardNotification.backgroundReportProcess, args=(DashboardNotification.report, DashboardNotification.notification,), daemon=True)
+scheduler = BackgroundScheduler()
 
+def job():
+    notification = Apprise()
+    notification.add(
+        servers='https://discord.com/api/webhooks/1331299726238416969/q_AWUXOGAzxtmPW9Mn3ruWrUjL4yYKq9y-sU8Y5Nwwm_4mahUbhfwvArBhrD4mdyaW4C')
+    notification.notify(body="Ciao sto eseguendo il job!!!!!")
+
+scheduler.add_job(job, trigger=IntervalTrigger(seconds=10), id="main", name="main")
+scheduler.start()
 
 AllPeerShareLinks: PeerShareLinks = PeerShareLinks()
 AllPeerJobs: PeerJobs = PeerJobs()

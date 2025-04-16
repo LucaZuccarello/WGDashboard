@@ -17,7 +17,7 @@ export default {
             zoomLevel : 1.5,
             counter: 1,
             nodes : {
-                node0: { name: "Server", active: false, showText: false},
+                node0: { name: "Server", status: 'stopped', showText: false},
             },
             edges : {},
             layouts: {
@@ -29,9 +29,9 @@ export default {
                     }
                 }
             },
-            eventHandlers: {
+            /*eventHandlers: {
                 "node:contextmenu": this.showNodeContextMenu,
-            },
+            },*/
             configs : vNG.defineConfigs({
                 view: {
                     layoutHandler: new ForceLayout({
@@ -55,18 +55,27 @@ export default {
                         dasharray: "4", 
                         animate: true,
                     },
+                    marker: {
+                        target: {
+                            type: "arrow",
+                            width: 4,
+                            height: 4,
+                            margin: -1,
+                            offset: 0,
+                            units: "strokeWidth",
+                            color: null,
+                        },
+                    }
                 },
                 node: {
                     normal: {
                         radius: 20,
                         color: "#6013ad",
-                        //color: n => (n.name === "Server" ? "#ff0000" : "#6013ad"),
                         strokeWidth: 2,
-                        strokeColor: n => (n.active ? "#808000" : "#ff0000")
+                        strokeColor: n => (this.getColor(n))
                     },
                     hover: {
                         color: "#430d78"
-                        //color: n => (n.name === "Server" ? "#8b0000" : "#430d78"),
                     },
                     label: {
                         visible: true,
@@ -103,15 +112,24 @@ export default {
 
         populateNodesAndEdges() {
             this.counter = 1
+            this.nodes['node0'].status = (this.configurationInfo.Status ? 'running' : 'stopped')
             this.configurationPeers.forEach((x) => {
                 const nodeId = `node${this.counter}`
                 const edgeId = `edge${this.counter}`
-                this.nodes[nodeId] = {name: x.name, active: true, showText: false}
+                this.nodes[nodeId] = {name: x.name, status: (x.restricted ? 'restricted' : x.status ), showText: false}
                 this.edges[edgeId] = {source: "node0", target: nodeId }
                 this.counter++
             })
         },
 
+        getColor(n){
+            if (n.status === 'restricted'){
+                return '#ffd700'
+            }
+            else
+                return (n.status === 'running' ? "#008000" : "#ff0000")
+        },
+        /*
         showNodeContextMenu(params) {
             const { node, event } = params
             // Disable browser's default context menu
@@ -137,7 +155,7 @@ export default {
             
             document.addEventListener("pointerdown", handler, { passive: true, capture: true });
         },
-
+*/
         showText(nodeId){
             this.nodes[nodeId].showText = true
         },
@@ -178,7 +196,7 @@ export default {
                 this.configurationInfo = [];
                 this.configurationPeers = [];
                 this.nodes = {
-                    node0: { name: "Server", active: false, showText: false},
+                    node0: { name: "Server", status: 'stopped', showText: false},
                 }
                 this.edges = {}
                 if (id){
@@ -208,9 +226,10 @@ export default {
                 :nodes="this.nodes" 
                 :edges="this.edges" 
                 :configs="this.configs" 
-                :layouts="this.layouts"
-                :event-handlers="this.eventHandlers"
+                :layouts="this.layouts"                     
+                
             > 
+                <!-- :event-handlers="this.eventHandlers" -->
                 <template
                     #override-node-label="{
                         nodeId, scale, text, x, y, config, textAnchor, dominantBaseline
@@ -305,10 +324,10 @@ export default {
                     </svg>
                 </template>
             </v-network-graph>
-            <div ref="nodeMenu" class="context-menu">
+            <!-- <div ref="nodeMenu" class="context-menu">
                 Menu for the nodes
                 <div>{{ menuTargetNode }}</div>
-            </div>
+            </div> -->
         </div>
     </div>
 </template>

@@ -9,3 +9,5 @@ gunicorn
 requests
 apprise
 protobuf
+aio_pika
+apscheduler

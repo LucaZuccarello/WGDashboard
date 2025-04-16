@@ -1,0 +1,49 @@
+services:
+  wireguard-dashboard:
+    build:
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    container_name: wgdashboard
+    environment:
+      - RABBITMQ_HOST= rabbitmq
+      #- tz=           # <--- Set container timezone, default: Europe/Amsterdam.
+      #- global_dns=        # <--- Set global DNS address, default: 1.1.1.1.
+      #- isolate=           # <--- Set the interfaces that will disallow peer communication, default: 'none'.
+      #- public_ip=         # <--- Set public IP to ensure the correct one is chosen, defaulting to the IP give by ifconfig.me.
+    ports:
+      - 10086:10086/tcp
+      - 51820:51820/udp
+      - 51823:51823/udp
+    volumes:
+      - conf:/etc/wireguard
+      - data:/data
+    cap_add:
+      - NET_ADMIN
+      - SYS_MODULE
+    sysctls:
+      - net.ipv4.ip_forward=1
+      - net.ipv4.conf.all.src_valid_mark=1
+    depends_on:
+      - rabbitmq
+    stop_grace_period: 1s
+
+  rabbitmq:
+    image: rabbitmq:management
+    container_name: rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: user           #if you change the credentials, chain the credentials inside the DashboardNotification class too
+      RABBITMQ_DEFAULT_PASS: password
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    stop_grace_period: 1s
+
+volumes:
+  conf:
+  data:
+  rabbitmq-data:
+    driver: local
+

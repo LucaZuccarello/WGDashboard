@@ -19,7 +19,7 @@ DESCRIPTOR = _descriptor.FileDescriptor(
   syntax='proto3',
   serialized_options=None,
   create_key=_descriptor._internal_create_key,
-  serialized_pb=b'\n\x0emessages.proto\x12\x0f\x61ppriseMessages\"$\n\x07Message\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x0b\n\x03tag\x18\x02 \x01(\tb\x06proto3'
+  serialized_pb=b'\n\x0emessages.proto\x12\x0f\x61ppriseMessages\"2\n\x07Message\x12\x0c\n\x04\x64\x61te\x18\x01 \x01(\t\x12\x0c\n\x04text\x18\x02 \x01(\t\x12\x0b\n\x03tag\x18\x03 \x01(\tb\x06proto3'
 )
 
 
@@ -34,15 +34,22 @@ _MESSAGE = _descriptor.Descriptor(
   create_key=_descriptor._internal_create_key,
   fields=[
     _descriptor.FieldDescriptor(
-      name='text', full_name='appriseMessages.Message.text', index=0,
+      name='date', full_name='appriseMessages.Message.date', index=0,
       number=1, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
       serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
     _descriptor.FieldDescriptor(
-      name='tag', full_name='appriseMessages.Message.tag', index=1,
+      name='text', full_name='appriseMessages.Message.text', index=1,
       number=2, type=9, cpp_type=9, label=1,
+      has_default_value=False, default_value=b"".decode('utf-8'),
+      message_type=None, enum_type=None, containing_type=None,
+      is_extension=False, extension_scope=None,
+      serialized_options=None, file=DESCRIPTOR,  create_key=_descriptor._internal_create_key),
+    _descriptor.FieldDescriptor(
+      name='tag', full_name='appriseMessages.Message.tag', index=2,
+      number=3, type=9, cpp_type=9, label=1,
       has_default_value=False, default_value=b"".decode('utf-8'),
       message_type=None, enum_type=None, containing_type=None,
       is_extension=False, extension_scope=None,
@@ -60,7 +67,7 @@ _MESSAGE = _descriptor.Descriptor(
   oneofs=[
   ],
   serialized_start=35,
-  serialized_end=71,
+  serialized_end=85,
 )
 
 DESCRIPTOR.message_types_by_name['Message'] = _MESSAGE
